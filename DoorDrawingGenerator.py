@@ -44,6 +44,7 @@ class DoorDrawingGenerator:
         doc: Optional[Drawing] = None,
         msp: Optional[Modelspace] = None,
         save_file: bool = True
+        , rotated: bool = False
     ) -> None:
         """
         Generates a DXF file for the door design with all geometry and dimension annotations.
@@ -88,76 +89,100 @@ class DoorDrawingGenerator:
         inner_offset_x = bending_width - bend_adjust
         inner_offset_y = bend_adjust - bending_height
 
-        # Draw outer rectangle (door frame)
-        msp.add_lwpolyline([
-            (offset_x + 0, offset_y + 0),
-            (offset_x + outer_width, offset_y + 0),
-            (offset_x + outer_width, offset_y + outer_height),
-            (offset_x + 0, offset_y + outer_height),
-            (offset_x + 0, offset_y + 0)
-        ], dxfattribs={"layer": "CUT"})
+        # Helper to transform local points into final coordinates.
+        # If rotated is False: identity + offset. If rotated is True: rotate 90deg CCW
+        # about the local origin and translate so the rotated shape sits in the
+        # positive quadrant starting at (offset_x, offset_y).
+        def transform_point(pt):
+            x, y = pt
+            if not rotated:
+                return (offset_x + x, offset_y + y)
+            # 90deg CCW rotation: (x,y) -> (-y, x). After rotation x-range is [-outer_height,0]
+            # so translate by +outer_height to bring into positive quadrant: (outer_height - y, x)
+            return (offset_x + (outer_height - y), offset_y + x)
+
+        # Debug: computed geometry values
+        print(f"[DEBUG door] file={file_name} rotated={rotated} offset=({offset_x},{offset_y}) outer_width={outer_width} outer_height={outer_height} inner_offset=({inner_offset_x},{inner_offset_y})")
+        # Draw outer rectangle (door frame) using transformed points
+        outer_pts = [
+            (0, 0),
+            (outer_width, 0),
+            (outer_width, outer_height),
+            (0, outer_height),
+            (0, 0)
+        ]
+        outer_trans = [transform_point(p) for p in outer_pts]
+        print(f"[DEBUG door] outer_transformed={outer_trans}")
+        msp.add_lwpolyline(outer_trans, dxfattribs={"layer": "CUT"})
 
         # Annotate outer rectangle dimensions
-        DoorDrawingGenerator.add_dimension_line(msp, (offset_x + 0, offset_y + 0), (offset_x + outer_width, offset_y + 0), f"{outer_width}", offset=-20, angle=0, isannotationRequired=isannotationRequired)
-        DoorDrawingGenerator.add_dimension_line(msp, (offset_x + 0, offset_y + 0), (offset_x + 0, offset_y + outer_height), f"{outer_height}", offset=-20, angle=90, isannotationRequired=isannotationRequired)
+        DoorDrawingGenerator.add_dimension_line(msp, transform_point((0, 0)), transform_point((outer_width, 0)), f"{outer_width}", offset=-20, angle=0, isannotationRequired=isannotationRequired)
+        DoorDrawingGenerator.add_dimension_line(msp, transform_point((0, 0)), transform_point((0, outer_height)), f"{outer_height}", offset=-20, angle=90, isannotationRequired=isannotationRequired)
 
         # Draw inner rectangle (door cutout)
-        msp.add_lwpolyline([
-            (offset_x + inner_offset_x, offset_y + inner_offset_y),
-            (offset_x + inner_offset_x + inner_width, offset_y + inner_offset_y),
-            (offset_x + inner_offset_x + inner_width, offset_y + inner_offset_y + inner_height + bending_height),
-            (offset_x + inner_offset_x, offset_y + inner_offset_y + inner_height + bending_height),
-            (offset_x + inner_offset_x, offset_y + inner_offset_y)
-        ], dxfattribs={"layer": "CUT"})
+        inner_pts = [
+            (inner_offset_x, inner_offset_y),
+            (inner_offset_x + inner_width, inner_offset_y),
+            (inner_offset_x + inner_width, inner_offset_y + inner_height + bending_height),
+            (inner_offset_x, inner_offset_y + inner_height + bending_height),
+            (inner_offset_x, inner_offset_y)
+        ]
+        inner_trans = [transform_point(p) for p in inner_pts]
+        print(f"[DEBUG door] inner_transformed={inner_trans}")
+        msp.add_lwpolyline(inner_trans, dxfattribs={"layer": "CUT"})
 
         # Annotate inner rectangle dimensions
-        top_y = offset_y + inner_offset_y + inner_height + bending_height
+        top_y = inner_offset_y + inner_height + bending_height
         if isannotationRequired:
-            DoorDrawingGenerator.add_dimension_line(msp, (offset_x + inner_offset_x, top_y), (offset_x + inner_offset_x + inner_width, top_y), f"{inner_width}", offset=20, angle=0, isannotationRequired=isannotationRequired)
-            right_x = offset_x + inner_offset_x + inner_width
+            DoorDrawingGenerator.add_dimension_line(msp, transform_point((inner_offset_x, top_y)), transform_point((inner_offset_x + inner_width, top_y)), f"{inner_width}", offset=20, angle=0, isannotationRequired=isannotationRequired)
+            right_x = inner_offset_x + inner_width
             total_inner_height = inner_height + bending_height
-            DoorDrawingGenerator.add_dimension_line(msp, (right_x, offset_y + inner_offset_y), (right_x, offset_y + inner_offset_y + total_inner_height), f"{total_inner_height}", offset=40, angle=90, isannotationRequired=isannotationRequired)
+            DoorDrawingGenerator.add_dimension_line(msp, transform_point((right_x, inner_offset_y)), transform_point((right_x, inner_offset_y + total_inner_height)), f"{total_inner_height}", offset=40, angle=90, isannotationRequired=isannotationRequired)
 
         # Draw circles (holes)
         circle_radius = DoorDrawingGenerator.DefaultCircleRadius
         left_circle_offset = DoorDrawingGenerator.DefaultLeftCircleOffset
         top_circle_offset = DoorDrawingGenerator.DefaultTopCircleOffset
 
-        circle_center_x = offset_x + inner_offset_x + left_circle_offset
-        circle_center_y_top = offset_y + inner_height - top_circle_offset + inner_offset_y + bend_adjust
-        circle_center_y_bottom = offset_y + top_circle_offset + inner_offset_y + bend_adjust
-        msp.add_circle((circle_center_x, circle_center_y_top), circle_radius, dxfattribs={"layer": "CUT"})
-        msp.add_circle((circle_center_x, circle_center_y_bottom), circle_radius, dxfattribs={"layer": "CUT"})
+        circle_center_x = inner_offset_x + left_circle_offset
+        circle_center_y_top = inner_height - top_circle_offset + inner_offset_y + bend_adjust
+        circle_center_y_bottom = top_circle_offset + inner_offset_y + bend_adjust
+        circ_top = transform_point((circle_center_x, circle_center_y_top))
+        circ_bottom = transform_point((circle_center_x, circle_center_y_bottom))
+        print(f"[DEBUG door] circles_local=({circle_center_x},{circle_center_y_top}),({circle_center_x},{circle_center_y_bottom}) transformed=({circ_top},{circ_bottom})")
+        msp.add_circle(circ_top, circle_radius, dxfattribs={"layer": "CUT"})
+        msp.add_circle(circ_bottom, circle_radius, dxfattribs={"layer": "CUT"})
 
         # Annotate circle dimensions (horizontal and vertical for each)
         if isannotationRequired:
-            DoorDrawingGenerator.add_dimension_line(msp, (offset_x + inner_offset_x, circle_center_y_top), (circle_center_x, circle_center_y_top), f"{left_circle_offset}", offset=20, angle=0, text_offset=28, isannotationRequired=isannotationRequired)
-            DoorDrawingGenerator.add_dimension_line(msp, (circle_center_x, offset_y + inner_height), (circle_center_x, circle_center_y_top), f"{abs(inner_height - (circle_center_y_top - offset_y)):.0f}", offset=40, angle=90, text_offset=28, isannotationRequired=isannotationRequired)
-            DoorDrawingGenerator.add_dimension_line(msp, (offset_x + inner_offset_x, circle_center_y_bottom), (circle_center_x, circle_center_y_bottom), f"{left_circle_offset}", offset=20, angle=0, text_offset=38, isannotationRequired=isannotationRequired)
-            DoorDrawingGenerator.add_dimension_line(msp, (circle_center_x, offset_y + 0), (circle_center_x, circle_center_y_bottom), f"{abs((circle_center_y_bottom - offset_y)):.0f}", offset=40, angle=90, text_offset=38, isannotationRequired=isannotationRequired)
+            DoorDrawingGenerator.add_dimension_line(msp, transform_point((inner_offset_x, circle_center_y_top)), transform_point((circle_center_x, circle_center_y_top)), f"{left_circle_offset}", offset=20, angle=0, text_offset=28, isannotationRequired=isannotationRequired)
+            DoorDrawingGenerator.add_dimension_line(msp, transform_point((circle_center_x, inner_height)), transform_point((circle_center_x, circle_center_y_top)), f"{abs(inner_height - (circle_center_y_top - 0)):.0f}", offset=40, angle=90, text_offset=28, isannotationRequired=isannotationRequired)
+            DoorDrawingGenerator.add_dimension_line(msp, transform_point((inner_offset_x, circle_center_y_bottom)), transform_point((circle_center_x, circle_center_y_bottom)), f"{left_circle_offset}", offset=20, angle=0, text_offset=38, isannotationRequired=isannotationRequired)
+            DoorDrawingGenerator.add_dimension_line(msp, transform_point((circle_center_x, 0)), transform_point((circle_center_x, circle_center_y_bottom)), f"{abs((circle_center_y_bottom - 0)):.0f}", offset=40, angle=90, text_offset=38, isannotationRequired=isannotationRequired)
 
         # Draw center box cutout
         box_gap = DoorDrawingGenerator.DefaultBoxGap
         box_width = DoorDrawingGenerator.DefaultBoxWidth
         box_height = DoorDrawingGenerator.DefaultBoxHeight
 
-        box_left_x = offset_x + inner_offset_x + box_gap
-        box_bottom_y = offset_y + inner_offset_y + ((inner_height + bending_height - box_height) / 2.0)
-        msp.add_lwpolyline([
+        box_left_x = inner_offset_x + box_gap
+        box_bottom_y = inner_offset_y + ((inner_height + bending_height - box_height) / 2.0)
+        box_pts = [
             (box_left_x, box_bottom_y),
             (box_left_x + box_width, box_bottom_y),
             (box_left_x + box_width, box_bottom_y + box_height),
             (box_left_x, box_bottom_y + box_height),
             (box_left_x, box_bottom_y)
-        ], dxfattribs={"layer": "CUT"})
+        ]
+        msp.add_lwpolyline([transform_point(p) for p in box_pts], dxfattribs={"layer": "CUT"})
 
         # Annotate center box dimensions
         if isannotationRequired:
-            DoorDrawingGenerator.add_dimension_line(msp, (offset_x + inner_offset_x, box_bottom_y + box_height), (box_left_x, box_bottom_y + box_height), f"{box_gap}", offset=20, angle=0, isannotationRequired=isannotationRequired)
-            DoorDrawingGenerator.add_dimension_line(msp, (box_left_x, box_bottom_y + box_height), (box_left_x + box_width, box_bottom_y + box_height), f"{box_width}", offset=20, angle=0, text_offset=28, isannotationRequired=isannotationRequired)
-            DoorDrawingGenerator.add_dimension_line(msp, (box_left_x + box_width, box_bottom_y), (box_left_x + box_width, box_bottom_y + box_height), f"{box_height}", offset=40, angle=90, text_offset=18, isannotationRequired=isannotationRequired)
+            DoorDrawingGenerator.add_dimension_line(msp, transform_point((inner_offset_x, box_bottom_y + box_height)), transform_point((box_left_x, box_bottom_y + box_height)), f"{box_gap}", offset=20, angle=0, isannotationRequired=isannotationRequired)
+            DoorDrawingGenerator.add_dimension_line(msp, transform_point((box_left_x, box_bottom_y + box_height)), transform_point((box_left_x + box_width, box_bottom_y + box_height)), f"{box_width}", offset=20, angle=0, text_offset=28, isannotationRequired=isannotationRequired)
+            DoorDrawingGenerator.add_dimension_line(msp, transform_point((box_left_x + box_width, box_bottom_y)), transform_point((box_left_x + box_width, box_bottom_y + box_height)), f"{box_height}", offset=40, angle=90, text_offset=18, isannotationRequired=isannotationRequired)
             top_of_box = box_bottom_y + box_height
-            DoorDrawingGenerator.add_dimension_line(msp, (box_left_x + box_width, top_of_box), (box_left_x + box_width, offset_y + outer_height), f"{abs((offset_y + outer_height) - top_of_box):.0f}", offset=40, angle=90, text_offset=28, isannotationRequired=isannotationRequired)
+            DoorDrawingGenerator.add_dimension_line(msp, transform_point((box_left_x + box_width, top_of_box)), transform_point((box_left_x + box_width, outer_height)), f"{abs((outer_height) - top_of_box):.0f}", offset=40, angle=90, text_offset=28, isannotationRequired=isannotationRequired)
 
         # Save file only if requested and not in bulk/bin mode
         if save_file and file_name is not None:

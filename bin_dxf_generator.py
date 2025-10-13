@@ -63,18 +63,22 @@ def generate_bin_dxf(sheet_width, sheet_height, doors, placements, file_name, is
             'save_file': False
         })
 
-        # If rotated, swap related parameters
-        if rotated:
-            params['width_measurement'], params['height_measurement'] = params.get('height_measurement'), params.get('width_measurement')
-            params['left_side_allowance_width'], params['left_side_allowance_height'] = params.get('left_side_allowance_height'), params.get('left_side_allowance_width')
-            params['right_side_allowance_width'], params['right_side_allowance_height'] = params.get('right_side_allowance_height'), params.get('right_side_allowance_width')
-            params['door_minus_measurement_width'], params['door_minus_measurement_height'] = params.get('door_minus_measurement_height'), params.get('door_minus_measurement_width')
-            params['bending_width'], params['bending_height'] = params.get('bending_height'), params.get('bending_width')
-
+        # Pass rotated flag to DoorDrawingGenerator which will handle coordinate transforms.
+        params['rotated'] = rotated
+        # Debug print of key parameters before drawing
+        dbg_keys = [
+            'width_measurement', 'height_measurement',
+            'left_side_allowance_width', 'right_side_allowance_width',
+            'left_side_allowance_height', 'right_side_allowance_height',
+            'door_minus_measurement_width', 'door_minus_measurement_height',
+            'bending_width', 'bending_height'
+        ]
+        dbg_vals = {k: params.get(k) for k in dbg_keys}
+        print(f"[DEBUG bin_dxf] file={door_params.get('file_name')} rotated={rotated} offset={offset} params={dbg_vals}")
         DoorDrawingGenerator.generate_door_dxf(**params)
 
     doc.saveas(file_name)
-    print(f"✅ Bin DXF file '{file_name}' created successfully.")
+    print(f" Bin DXF file '{file_name}' created successfully.")
 
 
 def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isannotationRequired=True):

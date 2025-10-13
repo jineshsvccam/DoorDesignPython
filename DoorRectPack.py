@@ -11,8 +11,14 @@ def pack_rectangles(rectangles, sheet_width, sheet_height):
     gap = 10  # mm, change as needed
     print(f"Packing {len(rectangles)} rectangles with {gap}mm gap...")
     packer = newPacker()
+    # Keep a map of original (padded) sizes so we can infer rotation when
+    # rectpack doesn't return an explicit rotated flag in the rect tuple.
+    orig_sizes = {}
     for width, height, name in rectangles:
-        packer.add_rect(width + gap, height + gap, rid=name)
+        padded_w = width + gap
+        padded_h = height + gap
+        orig_sizes[name] = (padded_w, padded_h)
+        packer.add_rect(padded_w, padded_h, rid=name)
     bin_count = max(1, len(rectangles))
     packer.add_bin(sheet_width, sheet_height, bin_count)
     packer.pack() # type: ignore
@@ -24,14 +30,28 @@ def pack_rectangles(rectangles, sheet_width, sheet_height):
             bin_id, x, y, w, h, rid, rotated = rect
         else:
             bin_id, x, y, w, h, rid = rect
+            # rectpack sometimes does not include an explicit rotated flag
+            # in the returned tuple. Infer rotation by comparing the returned
+            # (w,h) with the original padded sizes we submitted. If the
+            # dimensions are swapped, the rect was rotated.
             rotated = False
+            orig = orig_sizes.get(rid)
+            if orig is not None:
+                orig_w, orig_h = orig
+                if (w, h) == (orig_h, orig_w):
+                    rotated = True
+        # The packer placed rectangles using an expanded size (width+gap, height+gap).
+        # To keep the visual gap evenly around each rectangle, offset the actual
+        # placement by half the gap in both x and y. The stored width/height
+        # should exclude the gap portion.
+        half_gap = gap / 2.0
         placement = {
             "file_name": rid,
             "bin_id": bin_id,
-            "x": x,
-            "y": y,
-            "width": w - gap,
-            "height": h - gap,
+            "x": x + half_gap,
+            "y": y + half_gap,
+            "width": max(0, w - gap),
+            "height": max(0, h - gap),
             "rotated": rotated
         }
         if bin_id not in bins:

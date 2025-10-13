@@ -19,26 +19,26 @@ FIXED_PARAMS = {
 def main():
     df = pd.read_excel(EXCEL_FILE)
     rectangles, door_params_list = get_door_rectangles(df, FIXED_PARAMS)
-    print("Rectangles:", rectangles)
-    print("Door Params List:", door_params_list)
+    # print("Rectangles:", rectangles)
+    #print("Door Params List:", door_params_list)
 
     SHEET_WIDTH = 1250
     SHEET_HEIGHT = 2500
     from DoorRectPack import pack_rectangles
     from visualize_utils import visualize_placements
     bins = pack_rectangles(rectangles, sheet_width=SHEET_WIDTH, sheet_height=SHEET_HEIGHT)
-    print("Bins:", bins)
+    #print("Bins:", bins)
 
     # Flatten all placements for visualization
     all_placements = [p for bin_data in bins for p in bin_data["placements"]]
-    visualize_placements(all_placements, sheet_width=SHEET_WIDTH, sheet_height=SHEET_HEIGHT)
+    #visualize_placements(all_placements, sheet_width=SHEET_WIDTH, sheet_height=SHEET_HEIGHT)
 
     generate_all_bins_dxf(
         SHEET_WIDTH,
         SHEET_HEIGHT,
         bins,
         door_params_list,
-        isannotationRequired=True
+        isannotationRequired=False
     )
 
 if __name__ == "__main__":

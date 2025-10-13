@@ -1,6 +1,6 @@
 from rectpack import newPacker
 from door_utils import get_door_rectangles
-from bin_dxf_generator import generate_bin_dxf
+from bin_dxf_generator import generate_all_bins_dxf
 """
 Read Restructured_Door_Measurements.xlsx and generate DXF files for each row with 'Run Required' == 'Y'.
 Uses pandas to read Excel and DoorDrawingGenerator.generate_door_dxf for DXF creation.
@@ -33,7 +33,6 @@ def main():
     all_placements = [p for bin_data in bins for p in bin_data["placements"]]
     visualize_placements(all_placements, sheet_width=SHEET_WIDTH, sheet_height=SHEET_HEIGHT)
 
-    from bin_dxf_generator import generate_all_bins_dxf
     generate_all_bins_dxf(
         SHEET_WIDTH,
         SHEET_HEIGHT,

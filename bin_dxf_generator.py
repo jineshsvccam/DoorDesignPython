@@ -1,47 +1,17 @@
-def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isannotationRequired=True):
-    """
-    Loops through bins and generates a DXF file for each bin.
-    Args:
-        sheet_width: Width of the bin/sheet.
-        sheet_height: Height of the bin/sheet.
-        bins: List of bins, each with placements.
-        door_params_list: List of all door parameter dicts.
-        isannotationRequired: Whether to annotate dimensions.
-    """
-    for i, bin_data in enumerate(bins):
-        bin_id = bin_data["bin_id"]
-        placements = bin_data["placements"]
-        doors_in_bin = []
-        offsets_in_bin = []
-        for placement in placements:
-            file_name = placement["file_name"]
-            offset = (placement["x"], placement["y"])
-            door_params = next((d for d in door_params_list if d["file_name"] == file_name), None)
-            if door_params:
-                doors_in_bin.append(door_params)
-                offsets_in_bin.append(offset)
-        output_file = f"bin_{i+1}.dxf"
-        generate_bin_dxf(
-            sheet_width,
-            sheet_height,
-            doors_in_bin,
-            offsets_in_bin,
-            output_file,
-            isannotationRequired=isannotationRequired
-        )
-        print(f"Bin DXF '{output_file}' generation complete.")
-    print("Execution Complete.")
+import os
 from ezdxf.filemanagement import new
 from DoorDrawingGenerator import DoorDrawingGenerator
+
 
 def generate_bin_dxf(sheet_width, sheet_height, doors, placements, file_name, isannotationRequired=True):
     """
     Generates a DXF file for a bin (sheet) with multiple doors placed at specified offsets.
+
     Args:
         sheet_width: Width of the bin/sheet.
         sheet_height: Height of the bin/sheet.
         doors: List of dicts, each containing door parameters for DoorDrawingGenerator.generate_door_dxf.
-        placements: List of (x, y) offsets for each door in the bin.
+        placements: List of placement dicts (or None) for each door. Expected keys: 'x','y', optional 'rotated'.
         file_name: Output DXF file name for the bin.
         isannotationRequired: Whether to annotate dimensions.
     """
@@ -50,6 +20,7 @@ def generate_bin_dxf(sheet_width, sheet_height, doors, placements, file_name, is
     if not file_name.lower().endswith('.dxf'):
         raise ValueError("Output file name must end with .dxf")
 
+    # Create DXF document
     doc = new(dxfversion="R2010")
     doc.layers.new(name="BIN", dxfattribs={"color": 2})  # Yellow
     doc.layers.new(name="CUT", dxfattribs={"color": 4})  # Cyan
@@ -57,15 +28,12 @@ def generate_bin_dxf(sheet_width, sheet_height, doors, placements, file_name, is
     msp = doc.modelspace()
 
     # Draw bin boundary
-    msp.add_lwpolyline([
-        (0, 0),
-        (sheet_width, 0),
-        (sheet_width, sheet_height),
-        (0, sheet_height),
-        (0, 0)
-    ], dxfattribs={"layer": "BIN"})
+    msp.add_lwpolyline(
+        [(0, 0), (sheet_width, 0), (sheet_width, sheet_height), (0, sheet_height), (0, 0)],
+        dxfattribs={"layer": "BIN"}
+    )
 
-    # Draw each door at its placement
+    # Draw each door in the bin
     allowed_keys = [
         'width_measurement', 'height_measurement',
         'left_side_allowance_width', 'right_side_allowance_width',
@@ -74,15 +42,71 @@ def generate_bin_dxf(sheet_width, sheet_height, doors, placements, file_name, is
         'bending_width', 'bending_height',
         'file_name', 'isannotationRequired', 'offset', 'doc', 'msp', 'save_file'
     ]
-    for door_params, offset in zip(doors, placements):
+
+    for door_params, placement in zip(doors, placements):
+        rotated = False
+        if isinstance(placement, dict):
+            x = placement.get('x', 0) or 0
+            y = placement.get('y', 0) or 0
+            rotated = bool(placement.get('rotated', False))
+            offset = (x, y)
+        else:
+            offset = (0, 0)
+
         params = {k: v for k, v in dict(door_params).items() if k in allowed_keys}
-        params['file_name'] = None  # Don't save individual door DXFs
-        params['isannotationRequired'] = isannotationRequired
-        params['offset'] = offset
-        params['doc'] = doc
-        params['msp'] = msp
-        params['save_file'] = False
+        params.update({
+            'file_name': None,
+            'isannotationRequired': isannotationRequired,
+            'offset': offset,
+            'doc': doc,
+            'msp': msp,
+            'save_file': False
+        })
+
+        # If rotated, swap related parameters
+        if rotated:
+            params['width_measurement'], params['height_measurement'] = params.get('height_measurement'), params.get('width_measurement')
+            params['left_side_allowance_width'], params['left_side_allowance_height'] = params.get('left_side_allowance_height'), params.get('left_side_allowance_width')
+            params['right_side_allowance_width'], params['right_side_allowance_height'] = params.get('right_side_allowance_height'), params.get('right_side_allowance_width')
+            params['door_minus_measurement_width'], params['door_minus_measurement_height'] = params.get('door_minus_measurement_height'), params.get('door_minus_measurement_width')
+            params['bending_width'], params['bending_height'] = params.get('bending_height'), params.get('bending_width')
+
         DoorDrawingGenerator.generate_door_dxf(**params)
 
     doc.saveas(file_name)
-    print("Bin DXF file '{}' created successfully.".format(file_name))
+    print(f"✅ Bin DXF file '{file_name}' created successfully.")
+
+
+def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isannotationRequired=True):
+    """
+    Loops through bins and generates a DXF file for each bin.
+
+    Args:
+        sheet_width: Width of the bin/sheet.
+        sheet_height: Height of the bin/sheet.
+        bins: List of bins, each with placements.
+        door_params_list: List of all door parameter dicts.
+        isannotationRequired: Whether to annotate dimensions.
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    output_dir = os.path.join(script_dir, 'output')
+    os.makedirs(output_dir, exist_ok=True)
+
+    for i, bin_data in enumerate(bins):
+        placements = bin_data.get("placements", [])
+        doors_in_bin = []
+        offsets_in_bin = []
+
+        for placement in placements:
+            file_name = placement.get("file_name") if isinstance(placement, dict) else None
+            door_params = next((d for d in door_params_list if d.get("file_name") == file_name), None)
+            if door_params:
+                doors_in_bin.append(door_params)
+                offsets_in_bin.append(placement if isinstance(placement, dict) else None)
+
+        output_file = os.path.join(output_dir, f"bin_{i+1}.dxf")
+        generate_bin_dxf(sheet_width, sheet_height, doors_in_bin, offsets_in_bin, output_file, isannotationRequired)
+
+        print(f"Bin {i+1} DXF '{output_file}' generation complete.")
+
+    print(" All bins generated successfully.")

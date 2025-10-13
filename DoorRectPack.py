@@ -19,14 +19,20 @@ def pack_rectangles(rectangles, sheet_width, sheet_height):
     # Organize placements by bin
     bins = {}
     for rect in packer.rect_list():
-        bin_id, x, y, w, h, rid = rect
+        # rectpack returns: bin_id, x, y, w, h, rid, *rotated (rotated is optional)
+        if len(rect) == 7:
+            bin_id, x, y, w, h, rid, rotated = rect
+        else:
+            bin_id, x, y, w, h, rid = rect
+            rotated = False
         placement = {
             "file_name": rid,
             "bin_id": bin_id,
             "x": x,
             "y": y,
             "width": w - gap,
-            "height": h - gap
+            "height": h - gap,
+            "rotated": rotated
         }
         if bin_id not in bins:
             bins[bin_id] = []

@@ -40,7 +40,7 @@ def generate_bin_dxf(sheet_width, sheet_height, doors, placements, file_name, is
         'left_side_allowance_height', 'right_side_allowance_height',
         'door_minus_measurement_width', 'door_minus_measurement_height',
         'bending_width', 'bending_height',
-        'file_name', 'isannotationRequired', 'offset', 'doc', 'msp', 'save_file'
+        'file_name', 'isannotationRequired', 'offset', 'doc', 'msp', 'save_file', 'label_name'
     ]
 
     for door_params, placement in zip(doors, placements):
@@ -62,6 +62,9 @@ def generate_bin_dxf(sheet_width, sheet_height, doors, placements, file_name, is
             'msp': msp,
             'save_file': False
         })
+        # supply a label_name so the generator can draw file name text even when
+        # file saving is disabled (file_name=None)
+        params['label_name'] = door_params.get('file_name')
 
         # Pass rotated flag to DoorDrawingGenerator which will handle coordinate transforms.
         params['rotated'] = rotated

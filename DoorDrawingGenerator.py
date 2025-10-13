@@ -39,12 +39,13 @@ class DoorDrawingGenerator:
         bending_width: float,
         bending_height: float,
         file_name: Optional[str] = None,
+        label_name: Optional[str] = None,
         isannotationRequired: bool = True,
         offset: Tuple[float, float] = (0.0, 0.0),
         doc: Optional[Drawing] = None,
         msp: Optional[Modelspace] = None,
-        save_file: bool = True
-        , rotated: bool = False
+        save_file: bool = True,
+        rotated: bool = False
     ) -> None:
         """
         Generates a DXF file for the door design with all geometry and dimension annotations.
@@ -84,7 +85,9 @@ class DoorDrawingGenerator:
         inner_width = frame_total_width - door_minus_measurement_width
         inner_height = frame_total_height - door_minus_measurement_height
         outer_width = inner_width + bending_width
-        outer_height = inner_height
+        # outer_height should include bending_height so the center calculation
+        # matches the outer rectangle used by the packer and drawing.
+        outer_height = inner_height + bending_height
         bend_adjust = DoorDrawingGenerator.DefaultBendAdjust
         inner_offset_x = bending_width - bend_adjust
         inner_offset_y = bend_adjust - bending_height
@@ -114,6 +117,51 @@ class DoorDrawingGenerator:
         outer_trans = [transform_point(p) for p in outer_pts]
         print(f"[DEBUG door] outer_transformed={outer_trans}")
         msp.add_lwpolyline(outer_trans, dxfattribs={"layer": "CUT"})
+
+        # Add centered label inside the door: filename and size (W x H)
+        # Prefer explicit label_name (passed from bin generator) so labels are
+        # available even when file_name is set to None to avoid saving per-door.
+        source_label = label_name if label_name is not None else file_name
+        try:
+            label_text = f"{source_label}\n{int(round(outer_width))} x {int(round(outer_height))}"
+        except Exception:
+            label_text = f"{source_label}\n{int(outer_width)} x {int(outer_height)}"
+        # Calculate center in local coordinates
+        local_center_x = outer_width / 2.0
+        local_center_y = outer_height / 2.0
+        center = transform_point((local_center_x, local_center_y))
+        # For rotated doors, rotate text 90 degrees so it reads along the door's long axis
+        text_rotation = 90 if rotated else 0
+        # Create two single-line text entities (top: filename, bottom: WxH)
+        # This avoids multiline/MTEXT alignment quirks and lets us center reliably.
+        # Slightly tighter spacing to reduce overlap for small doors
+        line_spacing = DoorDrawingGenerator.DimTextHeight * 1.3
+        top_local = (local_center_x, local_center_y + (line_spacing / 2.0))
+        bot_local = (local_center_x, local_center_y - (line_spacing / 2.0))
+        top_pos = transform_point(top_local)
+        bot_pos = transform_point(bot_local)
+
+        # First line: filename (use source_label or empty string)
+        line1 = source_label if source_label is not None else ""
+        line2 = f"{int(round(outer_width))} x {int(round(outer_height))}"
+
+        t1 = msp.add_text(line1, dxfattribs={"layer": "DIMENSIONS", "height": DoorDrawingGenerator.DimTextHeight, "style": "Standard"})
+        t1.dxf.insert = top_pos
+        t1.dxf.halign = 2
+        t1.dxf.valign = 2
+        try:
+            t1.dxf.rotation = text_rotation
+        except Exception:
+            pass
+
+        t2 = msp.add_text(line2, dxfattribs={"layer": "DIMENSIONS", "height": DoorDrawingGenerator.DimTextHeight, "style": "Standard"})
+        t2.dxf.insert = bot_pos
+        t2.dxf.halign = 2
+        t2.dxf.valign = 2
+        try:
+            t2.dxf.rotation = text_rotation
+        except Exception:
+            pass
 
         # Annotate outer rectangle dimensions
         DoorDrawingGenerator.add_dimension_line(msp, transform_point((0, 0)), transform_point((outer_width, 0)), f"{outer_width}", offset=-20, angle=0, isannotationRequired=isannotationRequired)

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>DXF Generator</title>
+    <style>
+      body {
+        font-family: Arial;
+        margin: 30px;
+      }
+      .hidden {
+        display: none;
+      }
+      label {
+        display: block;
+        margin-top: 10px;
+      }
+      input[type="number"] {
+        width: 100px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>DXF Generator</h2>
+
+    <form id="dxfForm">
+      <label>
+        Execution Type:
+        <input type="radio" name="executionType" value="single" checked />
+        Single <input type="radio" name="executionType" value="bulk" /> Bulk
+      </label>
+
+      <div id="singleInputs">
+        <h4>Single Door Parameters (user input)</h4>
+        <label
+          >Width Measurement:
+          <input type="number" name="width_measurement" value="600"
+        /></label>
+        <label
+          >Height Measurement:
+          <input type="number" name="height_measurement" value="1105"
+        /></label>
+        <label
+          >Left Side Allowance Width:
+          <input type="number" name="left_side_allowance_width" value="25"
+        /></label>
+        <label
+          >Right Side Allowance Width:
+          <input type="number" name="right_side_allowance_width" value="25"
+        /></label>
+        <label
+          >Left Side Allowance Height:
+          <input type="number" name="left_side_allowance_height" value="25"
+        /></label>
+        <label
+          >Right Side Allowance Height:
+          <input type="number" name="right_side_allowance_height" value="0"
+        /></label>
+      </div>
+
+      <div id="bulkInputs" class="hidden">
+        <label>
+          Select Excel File:
+          <input type="file" id="excelFile" name="excelFile" accept=".xlsx" />
+        </label>
+      </div>
+
+      <button type="submit">Generate DXF</button>
+    </form>
+
+    <script>
+      const executionRadios = document.querySelectorAll(
+        'input[name="executionType"]'
+      );
+      const singleInputsDiv = document.getElementById("singleInputs");
+      const bulkInputsDiv = document.getElementById("bulkInputs");
+      const excelInput = document.getElementById("excelFile");
+
+      executionRadios.forEach((radio) => {
+        radio.addEventListener("change", () => {
+          if (radio.value === "bulk" && radio.checked) {
+            bulkInputsDiv.classList.remove("hidden");
+            singleInputsDiv.classList.add("hidden");
+            excelInput.required = true;
+          } else if (radio.value === "single" && radio.checked) {
+            singleInputsDiv.classList.remove("hidden");
+            bulkInputsDiv.classList.add("hidden");
+            excelInput.required = false;
+          }
+        });
+      });
+
+      document
+        .getElementById("dxfForm")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const executionType = document.querySelector(
+            'input[name="executionType"]:checked'
+          ).value;
+
+          if (executionType === "single") {
+            // Collect user inputs
+            const data = {};
+            singleInputsDiv.querySelectorAll("input").forEach((input) => {
+              data[input.name] = parseFloat(input.value);
+            });
+
+            // Add hardcoded values
+            Object.assign(data, {
+              door_minus_measurement_width: 68,
+              door_minus_measurement_height: 70,
+              bending_width: 31,
+              bending_height: 24,
+              file_name: "Single_door.dxf",
+            });
+
+            try {
+              const response = await fetch("/generate-single-dxf/", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data),
+              });
+
+              if (!response.ok) throw new Error("DXF generation failed");
+
+              const blob = await response.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "Single_door.dxf";
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+            } catch (err) {
+              alert(err.message);
+            }
+          } else if (executionType === "bulk") {
+            if (!excelInput.files.length) {
+              alert("Please select an Excel file!");
+              return;
+            }
+
+            const formData = new FormData();
+            formData.append("file", excelInput.files[0]);
+
+            try {
+              const response = await fetch("/generate-dxf/", {
+                method: "POST",
+                body: formData,
+              });
+
+              if (!response.ok) throw new Error("DXF ZIP generation failed");
+
+              const blob = await response.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "Doors.zip";
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+            } catch (err) {
+              alert(err.message);
+            }
+          }
+        });
+    </script>
+  </body>
+</html>

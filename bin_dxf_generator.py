@@ -1,4 +1,5 @@
 import os
+import shutil
 from ezdxf.filemanagement import new
 from DoorDrawingGenerator import DoorDrawingGenerator
 
@@ -117,3 +118,16 @@ def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isa
         print(f"Bin {i+1} DXF '{output_file}' generation complete.")
 
     print(" All bins generated successfully.")
+
+    # --- Create ZIP file of all generated DXFs ---
+    zip_path = os.path.join(script_dir, "output_bins.zip")
+    # shutil.make_archive expects the base name without extension
+    base_name = os.path.splitext(zip_path)[0]
+    try:
+        shutil.make_archive(base_name, "zip", output_dir)
+        print(f"ZIP file created at: {zip_path}")
+        return zip_path
+    except Exception as e:
+        print(f"Failed to create ZIP archive: {e}")
+        # Still return None to indicate failure to create archive
+        return None

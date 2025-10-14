@@ -16,30 +16,65 @@ FIXED_PARAMS = {
     "bending_height": 24,
 }
 
+
+def process_excel(excel_file: str, fixed_params: dict):
+    """Read an Excel file and return rectangles and door parameter list.
+
+    This isolates Excel I/O so callers can pass a file path.
+    """
+    df = pd.read_excel(excel_file)
+    return get_door_rectangles(df, fixed_params)
+
+
+def process_bins(rectangles, door_params_list, sheet_width: int = 1250, sheet_height: int = 2500, isannotationRequired: bool = False):
+    """Pack rectangles into sheets, (optionally) visualize placements, and generate DXF files.
+
+    Returns the list of bins produced by the packing algorithm.
+    """
+    from DoorRectPack import pack_rectangles
+    from visualize_utils import visualize_placements
+
+    bins = pack_rectangles(rectangles, sheet_width=sheet_width, sheet_height=sheet_height)
+
+    # Flatten all placements for visualization
+    all_placements = [p for bin_data in bins for p in bin_data["placements"]]
+    # Uncomment to visualize placements during development
+    # visualize_placements(all_placements, sheet_width=sheet_width, sheet_height=sheet_height)
+
+    # Generate DXF for all bins and capture zip path returned by generator
+    zip_path = generate_all_bins_dxf(
+        sheet_width,
+        sheet_height,
+        bins,
+        door_params_list,
+        isannotationRequired=isannotationRequired,
+    )
+
+    return bins, zip_path
+
+
+def generate_zip_from_excel(excel_file: str, fixed_params: dict = FIXED_PARAMS, sheet_width: int = 1250, sheet_height: int = 2500, isannotationRequired: bool = False):
+    """High-level helper that processes an Excel file, packs rectangles, generates DXFs, and returns the ZIP path.
+
+    This is suitable for calling from a service: pass the Excel file path and receive the path to the ZIP archive containing generated DXFs.
+    """
+    rectangles, door_params_list = process_excel(excel_file, fixed_params)
+    _, zip_path = process_bins(rectangles, door_params_list, sheet_width=sheet_width, sheet_height=sheet_height, isannotationRequired=isannotationRequired)
+    return zip_path
+
 def main():
-    df = pd.read_excel(EXCEL_FILE)
-    rectangles, door_params_list = get_door_rectangles(df, FIXED_PARAMS)
+    # Load and process the Excel file (moved to a separate function)
+    rectangles, door_params_list = process_excel(EXCEL_FILE, FIXED_PARAMS)
     # print("Rectangles:", rectangles)
     #print("Door Params List:", door_params_list)
 
     SHEET_WIDTH = 1250
     SHEET_HEIGHT = 2500
-    from DoorRectPack import pack_rectangles
-    from visualize_utils import visualize_placements
-    bins = pack_rectangles(rectangles, sheet_width=SHEET_WIDTH, sheet_height=SHEET_HEIGHT)
-    #print("Bins:", bins)
 
-    # Flatten all placements for visualization
-    all_placements = [p for bin_data in bins for p in bin_data["placements"]]
-    #visualize_placements(all_placements, sheet_width=SHEET_WIDTH, sheet_height=SHEET_HEIGHT)
-
-    generate_all_bins_dxf(
-        SHEET_WIDTH,
-        SHEET_HEIGHT,
-        bins,
-        door_params_list,
-        isannotationRequired=False
-    )
+    # Pack rectangles and generate DXF files (extracted to a separate function)
+    bins, zip_path = process_bins(rectangles, door_params_list, sheet_width=SHEET_WIDTH, sheet_height=SHEET_HEIGHT, isannotationRequired=False)
+    if zip_path:
+        print(f"Generated ZIP archive: {zip_path}")
 
 if __name__ == "__main__":
     main()

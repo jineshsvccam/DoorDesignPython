@@ -92,6 +92,68 @@ class DoorDrawingGenerator:
         inner_offset_x = bending_width - bend_adjust
         inner_offset_y = bend_adjust - bending_height
 
+        # Before transforming points, compute a small translation so no coords are negative.
+        # Gather key local points (outer, inner, box, circles) and find their mins.
+        # We'll also account for possible negative dimension offsets (e.g. -20) by
+        # adding a small safety margin so dimension lines don't go negative.
+
+        # Local (model) points
+        outer_pts = [
+            (0, 0),
+            (outer_width, 0),
+            (outer_width, outer_height),
+            (0, outer_height),
+            (0, 0),
+        ]
+
+        inner_pts = [
+            (inner_offset_x, inner_offset_y),
+            (inner_offset_x + inner_width, inner_offset_y),
+            (inner_offset_x + inner_width, inner_offset_y + inner_height + bending_height),
+            (inner_offset_x, inner_offset_y + inner_height + bending_height),
+            (inner_offset_x, inner_offset_y),
+        ]
+
+        # center box points (local)
+        box_gap = DoorDrawingGenerator.DefaultBoxGap
+        box_width = DoorDrawingGenerator.DefaultBoxWidth
+        box_height = DoorDrawingGenerator.DefaultBoxHeight
+        box_left_x = inner_offset_x + box_gap
+        box_bottom_y = inner_offset_y + ((inner_height + bending_height - box_height) / 2.0)
+        box_pts = [
+            (box_left_x, box_bottom_y),
+            (box_left_x + box_width, box_bottom_y),
+            (box_left_x + box_width, box_bottom_y + box_height),
+            (box_left_x, box_bottom_y + box_height),
+        ]
+
+        # circle centers (local)
+        left_circle_offset = DoorDrawingGenerator.DefaultLeftCircleOffset
+        circle_center_x = inner_offset_x + left_circle_offset
+        circle_center_y_top = inner_height - DoorDrawingGenerator.DefaultTopCircleOffset + inner_offset_y + bend_adjust
+        circle_center_y_bottom = DoorDrawingGenerator.DefaultTopCircleOffset + inner_offset_y + bend_adjust
+        circle_pts = [(circle_center_x, circle_center_y_top), (circle_center_x, circle_center_y_bottom)]
+
+        # Collect all points to determine mins
+        all_x = [p[0] for p in outer_pts + inner_pts + box_pts + circle_pts]
+        all_y = [p[1] for p in outer_pts + inner_pts + box_pts + circle_pts]
+        min_x = min(all_x)
+        min_y = min(all_y)
+
+        # Account for any negative dimension offsets used in this generator (e.g. outer dims use -20)
+        # We'll compute the most negative explicit offset used in calls below. The known values
+        # in this module are -20, 20 and 40; the worst negative is -20 -> need margin 20 to keep dim >=0.
+        worst_negative_dim_offset = -20
+        margin_y = abs(worst_negative_dim_offset) if worst_negative_dim_offset < 0 else 0
+
+        # Compute required translation so min coords (and dim offsets) are non-negative
+        translate_x = max(0.0, -min_x)
+        translate_y = max(0.0, -min_y + margin_y)
+
+        # Apply translation to the provided offset so transform_point will include it
+        offset_x += translate_x
+        offset_y += translate_y
+
         # Helper to transform local points into final coordinates.
         # If rotated is False: identity + offset. If rotated is True: rotate 90deg CCW
         # about the local origin and translate so the rotated shape sits in the
@@ -118,50 +180,10 @@ class DoorDrawingGenerator:
         print(f"[DEBUG door] outer_transformed={outer_trans}")
         msp.add_lwpolyline(outer_trans, dxfattribs={"layer": "CUT"})
 
-        # Add centered label inside the door: filename and size (W x H)
-        # Prefer explicit label_name (passed from bin generator) so labels are
-        # available even when file_name is set to None to avoid saving per-door.
+        # Add centered label inside the door: filename and size (W x H)    
+        # Move label drawing to helper for clarity
         source_label = label_name if label_name is not None else file_name
-        try:
-            label_text = f"{source_label}\n{int(round(outer_width))} x {int(round(outer_height))}"
-        except Exception:
-            label_text = f"{source_label}\n{int(outer_width)} x {int(outer_height)}"
-        # Calculate center in local coordinates
-        local_center_x = outer_width / 2.0
-        local_center_y = outer_height / 2.0
-        center = transform_point((local_center_x, local_center_y))
-        # For rotated doors, rotate text 90 degrees so it reads along the door's long axis
-        text_rotation = 90 if rotated else 0
-        # Create two single-line text entities (top: filename, bottom: WxH)
-        # This avoids multiline/MTEXT alignment quirks and lets us center reliably.
-        # Slightly tighter spacing to reduce overlap for small doors
-        line_spacing = DoorDrawingGenerator.DimTextHeight * 1.3
-        top_local = (local_center_x, local_center_y + (line_spacing / 2.0))
-        bot_local = (local_center_x, local_center_y - (line_spacing / 2.0))
-        top_pos = transform_point(top_local)
-        bot_pos = transform_point(bot_local)
-
-        # First line: filename (use source_label or empty string)
-        line1 = source_label if source_label is not None else ""
-        line2 = f"{int(round(outer_width))} x {int(round(outer_height))}"
-
-        t1 = msp.add_text(line1, dxfattribs={"layer": "DIMENSIONS", "height": DoorDrawingGenerator.DimTextHeight, "style": "Standard"})
-        t1.dxf.insert = top_pos
-        t1.dxf.halign = 2
-        t1.dxf.valign = 2
-        try:
-            t1.dxf.rotation = text_rotation
-        except Exception:
-            pass
-
-        t2 = msp.add_text(line2, dxfattribs={"layer": "DIMENSIONS", "height": DoorDrawingGenerator.DimTextHeight, "style": "Standard"})
-        t2.dxf.insert = bot_pos
-        t2.dxf.halign = 2
-        t2.dxf.valign = 2
-        try:
-            t2.dxf.rotation = text_rotation
-        except Exception:
-            pass
+        DoorDrawingGenerator.add_center_label(msp, transform_point, outer_width, outer_height, source_label, rotated)
 
         # Annotate outer rectangle dimensions
         DoorDrawingGenerator.add_dimension_line(msp, transform_point((0, 0)), transform_point((outer_width, 0)), f"{outer_width}", offset=-20, angle=0, isannotationRequired=isannotationRequired)
@@ -271,32 +293,115 @@ class DoorDrawingGenerator:
         if arrow_size is None:
             arrow_size = DoorDrawingGenerator.DimArrowSize
 
-        if angle == 0:  # horizontal
-            y = p1[1] + offset
-            msp.add_line((p1[0], y), (p2[0], y), dxfattribs={"layer": "DIMENSIONS"})
-            msp.add_line(p1, (p1[0], y), dxfattribs={"layer": "DIMENSIONS"})
-            msp.add_line(p2, (p2[0], y), dxfattribs={"layer": "DIMENSIONS"})
-            msp.add_line((p1[0], y), (p1[0] + arrow_size, y + arrow_size / 2), dxfattribs={"layer": "DIMENSIONS"})
-            msp.add_line((p1[0], y), (p1[0] + arrow_size, y - arrow_size / 2), dxfattribs={"layer": "DIMENSIONS"})
-            msp.add_line((p2[0], y), (p2[0] - arrow_size, y + arrow_size / 2), dxfattribs={"layer": "DIMENSIONS"})
-            msp.add_line((p2[0], y), (p2[0] - arrow_size, y - arrow_size / 2), dxfattribs={"layer": "DIMENSIONS"})
+        # Use ezdxf linear dimension entities for cleaner, standard dimensions.
+        # Calculate a base point for the dimension line offset in the perpendicular
+        # direction from the feature (p1->p2). ezdxf expects `base` to be a point
+        # on the dimension line. We'll compute the midpoint and move it by the
+        # offset along the edge normal. For horizontal (angle=0) the normal is
+        # (0, 1) and for vertical (angle=90) the normal is (1, 0) when edges are
+        # axis-aligned. For arbitrary edges this would require vector math but the
+        # current usage is axis-aligned so we keep it simple.
+        # Ensure text_offset influences the base point translation along the normal
+        # direction so the dimension text appears with the requested gap.
+
+        # midpoint
+        mid_x = (p1[0] + p2[0]) / 2.0
+        mid_y = (p1[1] + p2[1]) / 2.0
+        # direction normal depending on angle
+        if angle == 0:
+            # horizontal edge: normal points in +Y (up). offset positive moves dim up.
+            base = (mid_x, mid_y + offset)
+        else:
+            # vertical edge: normal points in +X (right). offset positive moves dim right.
+            base = (mid_x + offset, mid_y)
+
+        try:
+            dim = msp.add_linear_dim(base=base, p1=p1, p2=p2, angle=angle, dxfattribs={"layer": "DIMENSIONS"})
+            # set the text override if supported
+            # For ezdxf linear_dim objects, the measurement text can be overridden
+            # by setting `dim.dxf.text` or `dim.render()` followed by editing the
+            # text elements. Simpler approach: set `dim.render()` then add a text
+            # entity at the computed insertion point.
+            dim.render()
+        except Exception:
+            # Fallback: if add_linear_dim is not available for some reason,
+            # silently draw a simple text at the approximate location.
             txt = msp.add_text(text, dxfattribs={"layer": "DIMENSIONS", "height": DoorDrawingGenerator.DimTextHeight, "style": "Standard"})
-            txt.dxf.insert = ((p1[0]+p2[0])/2, y+text_offset)
-            txt.dxf.halign = 2  # center
-            txt.dxf.valign = 2  # middle
-        else:  # vertical
-            x = p1[0] + offset
-            msp.add_line((x, p1[1]), (x, p2[1]), dxfattribs={"layer": "DIMENSIONS"})
-            msp.add_line(p1, (x, p1[1]), dxfattribs={"layer": "DIMENSIONS"})
-            msp.add_line(p2, (x, p2[1]), dxfattribs={"layer": "DIMENSIONS"})
-            msp.add_line((x, p1[1]), (x - arrow_size / 2, p1[1] + arrow_size), dxfattribs={"layer": "DIMENSIONS"})
-            msp.add_line((x, p1[1]), (x + arrow_size / 2, p1[1] + arrow_size), dxfattribs={"layer": "DIMENSIONS"})
-            msp.add_line((x, p2[1]), (x - arrow_size / 2, p2[1] - arrow_size), dxfattribs={"layer": "DIMENSIONS"})
-            msp.add_line((x, p2[1]), (x + arrow_size / 2, p2[1] - arrow_size), dxfattribs={"layer": "DIMENSIONS"})
+            if angle == 0:
+                txt.dxf.insert = (mid_x, mid_y + offset + text_offset)
+                txt.dxf.halign = 2
+                txt.dxf.valign = 2
+            else:
+                txt.dxf.insert = (mid_x + offset + text_offset, mid_y)
+                txt.dxf.halign = 0
+                txt.dxf.valign = 2
+            return
+
+        # Place the textual override near the dimension line if requested.
+        # We'll try to position a text entity at a small offset from the base mid
+        # point so it doesn't overlap the dimension line. If the dim object
+        # supports direct text override, that would be preferable, but doing so
+        # is implementation dependent across ezdxf versions.
+        try:
+            # calculate text insert point relative to base
+            if angle == 0:
+                text_insert = (mid_x, mid_y + offset + (text_offset if text_offset is not None else DoorDrawingGenerator.DimTextHeight * 2))
+                halign = 2
+            else:
+                text_insert = (mid_x + offset + (text_offset if text_offset is not None else DoorDrawingGenerator.DimTextHeight * 2), mid_y)
+                halign = 0
+
             txt = msp.add_text(text, dxfattribs={"layer": "DIMENSIONS", "height": DoorDrawingGenerator.DimTextHeight, "style": "Standard"})
-            txt.dxf.insert = (x+text_offset, (p1[1]+p2[1])/2)
-            txt.dxf.halign = 0  # left
-            txt.dxf.valign = 2  # middle
+            txt.dxf.insert = text_insert
+            txt.dxf.halign = halign
+            txt.dxf.valign = 2
+        except Exception:
+            # ignore text placement errors
+            pass
+
+    @staticmethod
+    def add_center_label(msp, transform_point_func, outer_width: float, outer_height: float, source_label: Optional[str], rotated: bool) -> None:
+        """
+        Add two centered single-line text entities inside the door: top line = label, bottom line = WxH.
+        transform_point_func: function that converts local points to final coordinates (accepts a tuple).
+        """
+        try:
+            label_text = f"{source_label}\n{int(round(outer_width))} x {int(round(outer_height))}"
+        except Exception:
+            label_text = f"{source_label}\n{int(outer_width)} x {int(outer_height)}"
+
+        # Calculate center in local coordinates
+        local_center_x = outer_width / 2.0
+        local_center_y = outer_height / 2.0
+        # For rotated doors, rotate text 90 degrees so it reads along the door's long axis
+        text_rotation = 90 if rotated else 0
+        # Create two single-line text entities (top: filename, bottom: WxH)
+        line_spacing = DoorDrawingGenerator.DimTextHeight * 1.3
+        top_local = (local_center_x, local_center_y + (line_spacing / 2.0))
+        bot_local = (local_center_x, local_center_y - (line_spacing / 2.0))
+        top_pos = transform_point_func(top_local)
+        bot_pos = transform_point_func(bot_local)
+
+        line1 = source_label if source_label is not None else ""
+        line2 = f"{int(round(outer_width))} x {int(round(outer_height))}"
+
+        t1 = msp.add_text(line1, dxfattribs={"layer": "DIMENSIONS", "height": DoorDrawingGenerator.DimTextHeight, "style": "Standard"})
+        t1.dxf.insert = top_pos
+        t1.dxf.halign = 2
+        t1.dxf.valign = 2
+        try:
+            t1.dxf.rotation = text_rotation
+        except Exception:
+            pass
+
+        t2 = msp.add_text(line2, dxfattribs={"layer": "DIMENSIONS", "height": DoorDrawingGenerator.DimTextHeight, "style": "Standard"})
+        t2.dxf.insert = bot_pos
+        t2.dxf.halign = 2
+        t2.dxf.valign = 2
+        try:
+            t2.dxf.rotation = text_rotation
+        except Exception:
+            pass
 
 
 # Example usage

@@ -13,7 +13,36 @@ from pydantic import BaseModel
 from typing import Optional
 from DoorDrawingGenerator import DoorDrawingGenerator
 
+# Serve the frontend static files and allow CORS for external UI (optional)
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+
 app = FastAPI()
+
+# Mount the frontend directory under /static and serve index.html at root
+frontend_dir = Path(__file__).resolve().parents[1] / "frontend"
+if frontend_dir.exists():
+    # Mounting at '/' causes StaticFiles to take precedence for all paths and
+    # will return 405 for POST requests (StaticFiles only allows GET/HEAD).
+    # Mount under '/static' and serve index.html explicitly at '/'.
+    app.mount("/static", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
+
+    @app.get("/", include_in_schema=False)
+    async def serve_index():
+        index_path = frontend_dir / "index.html"
+        if index_path.exists():
+            return FileResponse(str(index_path), media_type="text/html")
+        return {"detail": "Frontend index.html not found"}
+
+# Allow CORS from anywhere (change to specific origins for production)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.post("/generate-dxf/")
 async def generate_dxf(file: UploadFile = File(...)):
@@ -85,3 +114,9 @@ def generate_single_dxf(params: SingleDoorParams):
         raise HTTPException(status_code=500, detail="DXF file was not created")
 
     return FileResponse(path=str(out_path), filename=out_path.name, media_type="application/dxf")
+
+
+if __name__ == "__main__":
+    # When running locally or on Replit this will use the PORT env var if present.
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("fastapi_app.main:app", host="0.0.0.0", port=port, log_level="info")

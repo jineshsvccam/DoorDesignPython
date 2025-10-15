@@ -32,7 +32,15 @@ if frontend_dir.exists():
     async def serve_index():
         index_path = frontend_dir / "index.html"
         if index_path.exists():
-            return FileResponse(str(index_path), media_type="text/html")
+            return FileResponse(
+                str(index_path), 
+                media_type="text/html",
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0"
+                }
+            )
         return {"detail": "Frontend index.html not found"}
 
 # Allow CORS from anywhere (change to specific origins for production)

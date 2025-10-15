@@ -9,10 +9,18 @@
       :root {
         --gap: 12px;
         --pad: 16px;
-        --muted: #666;
-        --accent: #1976d2;
-        --bg: #f6f9fc;
-        --card: #ffffff;
+        --muted: #64748b;
+        --accent: #14b8a6;
+        --accent-hover: #0d9488;
+        --bg: #0f172a;
+        --card: #1e293b;
+        --text: #f1f5f9;
+        --border: #334155;
+        --shadow: rgba(0, 0, 0, 0.3);
+      }
+
+      * {
+        box-sizing: border-box;
       }
 
       html,
@@ -20,34 +28,42 @@
         height: 100%;
         margin: 0;
         background: var(--bg);
-        font-family: Inter, Roboto, Arial, sans-serif;
-        color: #111;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+        color: var(--text);
       }
 
       /* ========== CONTAINER & HEADINGS ========== */
       .container {
         max-width: 900px;
-        margin: 20px auto;
+        margin: 40px auto;
         padding: var(--pad);
       }
 
       h2 {
-        margin: 0 0 10px 0;
+        margin: 0 0 24px 0;
         text-align: center;
+        font-size: 2.5rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--accent), #06b6d4);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
       }
 
       h4 {
-        margin: 12px 0 8px 0;
-        color: #333;
+        margin: 20px 0 12px 0;
+        color: var(--text);
+        font-weight: 600;
+        font-size: 1.1rem;
       }
 
       /* ========== FORM CARD ========== */
       form {
         background: var(--card);
-        border-radius: 8px;
-        padding: 18px;
-        box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
-        border: 1px solid #eee;
+        border-radius: 20px;
+        padding: 32px;
+        box-shadow: 0 20px 60px var(--shadow);
+        border: 1px solid var(--border);
       }
 
       .row {
@@ -58,17 +74,15 @@
       }
 
       .mt {
-        margin-top: 10px;
+        margin-top: 24px;
       }
 
       label {
         display: block;
         font-size: 14px;
         color: var(--muted);
-      }
-
-      label input {
-        margin-top: 4px;
+        font-weight: 500;
+        margin-bottom: 8px;
       }
 
       .field {
@@ -77,43 +91,145 @@
 
       input[type="number"],
       input[type="file"],
-      select,
-      .radio-group {
+      select {
         width: 100%;
         box-sizing: border-box;
-        padding: 8px 10px;
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        background: transparent;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #0f172a;
+        color: var(--text);
         font-size: 14px;
+        transition: all 0.3s ease;
       }
 
-      .radio-group {
+      input[type="number"]:focus,
+      input[type="file"]:focus,
+      select:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.1);
+      }
+
+      /* ========== MODERN TOGGLE SWITCH ========== */
+      .toggle-container {
         display: flex;
-        gap: 12px;
-        align-items: center;
+        justify-content: center;
+        margin: 20px 0;
       }
 
+      .toggle-switch {
+        position: relative;
+        display: inline-flex;
+        background: #0f172a;
+        border-radius: 50px;
+        padding: 4px;
+        border: 1px solid var(--border);
+        user-select: none;
+        box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+      }
+
+      .toggle-option {
+        position: relative;
+        padding: 12px 32px;
+        cursor: pointer;
+        z-index: 2;
+        transition: color 0.3s ease;
+        font-weight: 600;
+        font-size: 15px;
+        color: var(--muted);
+      }
+
+      .toggle-option.active {
+        color: white;
+      }
+
+      .toggle-slider {
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        height: calc(100% - 8px);
+        background: linear-gradient(135deg, var(--accent), #06b6d4);
+        border-radius: 50px;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 4px 12px rgba(20, 184, 166, 0.4);
+        z-index: 1;
+      }
+
+      .toggle-hint {
+        text-align: center;
+        color: var(--muted);
+        font-size: 14px;
+        margin-top: 12px;
+      }
+
+      /* ========== INPUT GROUPS ========== */
+      .input-group {
+        position: relative;
+      }
+
+      .input-group input {
+        padding-right: 45px;
+      }
+
+      .input-suffix {
+        position: absolute;
+        right: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--muted);
+        font-size: 13px;
+        pointer-events: none;
+      }
+
+      /* ========== CONTROLS ========== */
       .controls {
         display: flex;
         gap: 12px;
-        margin-top: 14px;
-        justify-content: flex-end;
+        margin-top: 28px;
+        justify-content: center;
       }
 
       button[type="submit"] {
-        background: var(--accent);
-        color: #fff;
+        background: linear-gradient(135deg, var(--accent), #06b6d4);
+        color: white;
         border: none;
-        padding: 10px 14px;
-        border-radius: 6px;
+        padding: 14px 40px;
+        border-radius: 50px;
         cursor: pointer;
-        font-weight: 600;
+        font-weight: 700;
+        font-size: 16px;
+        transition: all 0.3s ease;
+        box-shadow: 0 8px 24px rgba(20, 184, 166, 0.3);
+        position: relative;
+        overflow: hidden;
       }
 
       button[type="submit"]:hover {
-        background: #1565c0;
-        transition: background 0.2s ease-in-out;
+        transform: translateY(-2px);
+        box-shadow: 0 12px 32px rgba(20, 184, 166, 0.4);
+      }
+
+      button[type="submit"]:active {
+        transform: translateY(0);
+      }
+
+      button[type="submit"]::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.3);
+        transform: translate(-50%, -50%);
+        transition: width 0.6s, height 0.6s;
+      }
+
+      button[type="submit"]:hover::before {
+        width: 300px;
+        height: 300px;
       }
 
       /* ========== GRID FOR LARGE SCREENS ========== */
@@ -121,66 +237,118 @@
         .grid-2 {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: var(--gap);
+          gap: 16px;
         }
       }
 
       /* ========== MOBILE OPTIMIZATION ========== */
       @media (max-width: 480px) {
         .container {
-          margin: 0;
-          padding: 10px;
+          margin: 20px auto;
+          padding: 12px;
         }
 
         form {
-          padding: 14px;
-          box-shadow: none;
-          border-radius: 0;
+          padding: 20px;
+          border-radius: 16px;
         }
 
         h2 {
-          font-size: 1.25rem;
-          text-align: center;
+          font-size: 1.8rem;
         }
 
         h4 {
           font-size: 1rem;
         }
 
+        .toggle-option {
+          padding: 10px 24px;
+          font-size: 14px;
+        }
+
         input[type="number"],
         input[type="file"],
         button {
           font-size: 15px;
-          padding: 12px;
-        }
-
-        .grid-2 {
-          display: block; /* stack inputs vertically */
-        }
-
-        .controls {
-          justify-content: center;
         }
 
         button[type="submit"] {
-          width: 100%; /* big button for thumbs */
-          font-size: 16px;
-        }
-
-        small.note {
-          font-size: 13px;
-          line-height: 1.3;
+          width: 100%;
+          padding: 16px 32px;
         }
       }
 
+      /* ========== UTILITY CLASSES ========== */
       .hidden {
         display: none;
       }
 
       small.note {
         display: block;
-        margin-top: 6px;
+        margin-top: 8px;
         color: var(--muted);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      /* ========== FADE ANIMATIONS ========== */
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .fade-in {
+        animation: fadeIn 0.4s ease-out;
+      }
+
+      /* ========== LOADING STATE ========== */
+      .loading {
+        pointer-events: none;
+        opacity: 0.6;
+      }
+
+      .loading button[type="submit"]::after {
+        content: '';
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        top: 50%;
+        left: 50%;
+        margin-left: 10px;
+        border: 2px solid transparent;
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+      }
+
+      @keyframes spin {
+        to { transform: translate(-50%, -50%) rotate(360deg); }
+      }
+
+      /* ========== SECTION DIVIDERS ========== */
+      .section-divider {
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--border), transparent);
+        margin: 24px 0;
+      }
+
+      /* ========== FILE INPUT STYLING ========== */
+      input[type="file"] {
+        padding: 20px;
+        border: 2px dashed var(--border);
+        background: rgba(20, 184, 166, 0.05);
+        cursor: pointer;
+      }
+
+      input[type="file"]:hover {
+        border-color: var(--accent);
+        background: rgba(20, 184, 166, 0.1);
       }
     </style>
   </head>
@@ -189,117 +357,103 @@
       <h2>DXF Generator</h2>
 
       <form id="dxfForm">
-        <div class="row">
-          <div style="flex: 1">
-            <label>Execution Type</label>
-            <div class="radio-group">
-              <label style="margin: 0; color: inherit"
-                ><input
-                  type="radio"
-                  name="executionType"
-                  value="single"
-                  checked
-                />
-                Single</label
-              >
-              <label style="margin: 0; color: inherit"
-                ><input type="radio" name="executionType" value="bulk" />
-                Bulk</label
-              >
-            </div>
-            <small class="note"
-              >Choose Single to enter parameters or Bulk to upload an Excel
-              file.</small
-            >
+        <div class="toggle-container">
+          <div class="toggle-switch" id="toggleSwitch">
+            <div class="toggle-slider" id="toggleSlider"></div>
+            <div class="toggle-option active" data-value="single">Single</div>
+            <div class="toggle-option" data-value="bulk">Bulk</div>
           </div>
         </div>
+        <div class="toggle-hint">
+          <span id="toggleHint">Enter parameters below</span>
+        </div>
 
-        <div id="singleInputs" class="mt">
-          <h4>Single Door Parameters</h4>
+        <div class="section-divider"></div>
+
+        <div id="singleInputs" class="fade-in">
+          <h4>Core Dimensions</h4>
           <div class="grid-2">
-            <div>
-              <label
-                >Width Measurement (mm)
-                <input
-                  type="number"
-                  name="width_measurement"
-                  value="600"
-                  class="field"
-                />
-              </label>
+            <div class="input-group">
+              <label>Width Measurement</label>
+              <input
+                type="number"
+                name="width_measurement"
+                value="600"
+                class="field"
+              />
+              <span class="input-suffix">mm</span>
             </div>
 
-            <div>
-              <label
-                >Height Measurement (mm)
-                <input
-                  type="number"
-                  name="height_measurement"
-                  value="1105"
-                  class="field"
-                />
-              </label>
+            <div class="input-group">
+              <label>Height Measurement</label>
+              <input
+                type="number"
+                name="height_measurement"
+                value="1105"
+                class="field"
+              />
+              <span class="input-suffix">mm</span>
+            </div>
+          </div>
+
+          <h4>Horizontal Allowances</h4>
+          <div class="grid-2">
+            <div class="input-group">
+              <label>Left Side Allowance Width</label>
+              <input
+                type="number"
+                name="left_side_allowance_width"
+                value="25"
+                class="field"
+              />
+              <span class="input-suffix">mm</span>
             </div>
 
-            <div>
-              <label
-                >Left Side Allowance Width (mm)
-                <input
-                  type="number"
-                  name="left_side_allowance_width"
-                  value="25"
-                  class="field"
-                />
-              </label>
+            <div class="input-group">
+              <label>Right Side Allowance Width</label>
+              <input
+                type="number"
+                name="right_side_allowance_width"
+                value="25"
+                class="field"
+              />
+              <span class="input-suffix">mm</span>
+            </div>
+          </div>
+
+          <h4>Vertical Allowances</h4>
+          <div class="grid-2">
+            <div class="input-group">
+              <label>Left Side Allowance Height</label>
+              <input
+                type="number"
+                name="left_side_allowance_height"
+                value="25"
+                class="field"
+              />
+              <span class="input-suffix">mm</span>
             </div>
 
-            <div>
-              <label
-                >Right Side Allowance Width (mm)
-                <input
-                  type="number"
-                  name="right_side_allowance_width"
-                  value="25"
-                  class="field"
-                />
-              </label>
-            </div>
-
-            <div>
-              <label
-                >Left Side Allowance Height (mm)
-                <input
-                  type="number"
-                  name="left_side_allowance_height"
-                  value="25"
-                  class="field"
-                />
-              </label>
-            </div>
-
-            <div>
-              <label
-                >Right Side Allowance Height (mm)
-                <input
-                  type="number"
-                  name="right_side_allowance_height"
-                  value="0"
-                  class="field"
-                />
-              </label>
+            <div class="input-group">
+              <label>Right Side Allowance Height</label>
+              <input
+                type="number"
+                name="right_side_allowance_height"
+                value="0"
+                class="field"
+              />
+              <span class="input-suffix">mm</span>
             </div>
           </div>
         </div>
 
         <div id="bulkInputs" class="hidden">
-          <h4>Bulk DXF (Excel)</h4>
-          <label
-            >Select Excel File
-            <input type="file" id="excelFile" name="excelFile" accept=".xlsx" />
-          </label>
-          <small class="note"
-            >Excel should contain required columns for door generation.</small
-          >
+          <h4>Bulk DXF Generation</h4>
+          <label>Upload Excel File</label>
+          <input type="file" id="excelFile" name="excelFile" accept=".xlsx" />
+          <small class="note">
+            📊 Excel should contain required columns for door generation.
+          </small>
         </div>
 
         <div class="controls">
@@ -309,101 +463,162 @@
     </div>
 
     <script>
-      const executionRadios = document.querySelectorAll(
-        'input[name="executionType"]'
-      );
-      const singleInputsDiv = document.getElementById("singleInputs");
-      const bulkInputsDiv = document.getElementById("bulkInputs");
-      const excelInput = document.getElementById("excelFile");
+      const toggleSwitch = document.getElementById('toggleSwitch');
+      const toggleSlider = document.getElementById('toggleSlider');
+      const toggleOptions = document.querySelectorAll('.toggle-option');
+      const toggleHint = document.getElementById('toggleHint');
+      const singleInputsDiv = document.getElementById('singleInputs');
+      const bulkInputsDiv = document.getElementById('bulkInputs');
+      const excelInput = document.getElementById('excelFile');
+      const form = document.getElementById('dxfForm');
 
-      executionRadios.forEach((radio) => {
-        radio.addEventListener("change", () => {
-          if (radio.value === "bulk" && radio.checked) {
-            bulkInputsDiv.classList.remove("hidden");
-            singleInputsDiv.classList.add("hidden");
-            excelInput.required = true;
-          } else if (radio.value === "single" && radio.checked) {
-            singleInputsDiv.classList.remove("hidden");
-            bulkInputsDiv.classList.add("hidden");
-            excelInput.required = false;
+      let currentMode = 'single';
+      let touchStartX = 0;
+      let touchEndX = 0;
+
+      function setTogglePosition() {
+        const activeOption = document.querySelector('.toggle-option.active');
+        const sliderWidth = activeOption.offsetWidth;
+        const sliderLeft = activeOption.offsetLeft;
+        
+        toggleSlider.style.width = sliderWidth + 'px';
+        toggleSlider.style.transform = `translateX(${sliderLeft - 4}px)`;
+      }
+
+      function switchMode(mode) {
+        if (currentMode === mode) return;
+        
+        currentMode = mode;
+        
+        toggleOptions.forEach(option => {
+          if (option.dataset.value === mode) {
+            option.classList.add('active');
+          } else {
+            option.classList.remove('active');
           }
+        });
+
+        setTogglePosition();
+
+        if (mode === 'bulk') {
+          bulkInputsDiv.classList.remove('hidden');
+          bulkInputsDiv.classList.add('fade-in');
+          singleInputsDiv.classList.add('hidden');
+          excelInput.required = true;
+          toggleHint.textContent = 'Upload Excel file';
+        } else {
+          singleInputsDiv.classList.remove('hidden');
+          singleInputsDiv.classList.add('fade-in');
+          bulkInputsDiv.classList.add('hidden');
+          excelInput.required = false;
+          toggleHint.textContent = 'Enter parameters below';
+        }
+      }
+
+      toggleOptions.forEach(option => {
+        option.addEventListener('click', () => {
+          switchMode(option.dataset.value);
         });
       });
 
-      document
-        .getElementById("dxfForm")
-        .addEventListener("submit", async (e) => {
-          e.preventDefault();
-          const executionType = document.querySelector(
-            'input[name="executionType"]:checked'
-          ).value;
+      toggleSwitch.addEventListener('touchstart', (e) => {
+        touchStartX = e.changedTouches[0].screenX;
+      });
 
-          if (executionType === "single") {
-            // Collect user inputs
-            const data = {};
-            singleInputsDiv.querySelectorAll("input").forEach((input) => {
-              data[input.name] = parseFloat(input.value);
+      toggleSwitch.addEventListener('touchend', (e) => {
+        touchEndX = e.changedTouches[0].screenX;
+        handleSwipe();
+      });
+
+      function handleSwipe() {
+        const swipeThreshold = 50;
+        
+        if (touchEndX < touchStartX - swipeThreshold) {
+          switchMode('bulk');
+        }
+        
+        if (touchEndX > touchStartX + swipeThreshold) {
+          switchMode('single');
+        }
+      }
+
+      setTogglePosition();
+      window.addEventListener('resize', setTogglePosition);
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        form.classList.add('loading');
+
+        if (currentMode === 'single') {
+          const data = {};
+          singleInputsDiv.querySelectorAll('input').forEach((input) => {
+            data[input.name] = parseFloat(input.value);
+          });
+
+          Object.assign(data, {
+            door_minus_measurement_width: 68,
+            door_minus_measurement_height: 70,
+            bending_width: 31,
+            bending_height: 24,
+            file_name: 'Single_door.dxf',
+          });
+
+          try {
+            const response = await fetch('/generate-single-dxf/', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(data),
             });
 
-            // Add hardcoded values
-            Object.assign(data, {
-              door_minus_measurement_width: 68,
-              door_minus_measurement_height: 70,
-              bending_width: 31,
-              bending_height: 24,
-              file_name: "Single_door.dxf",
-            });
+            if (!response.ok) throw new Error('DXF generation failed');
 
-            try {
-              const response = await fetch("/generate-single-dxf/", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(data),
-              });
-
-              if (!response.ok) throw new Error("DXF generation failed");
-
-              const blob = await response.blob();
-              const url = window.URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = "Single_door.dxf";
-              document.body.appendChild(a);
-              a.click();
-              a.remove();
-            } catch (err) {
-              alert(err.message);
-            }
-          } else if (executionType === "bulk") {
-            if (!excelInput.files.length) {
-              alert("Please select an Excel file!");
-              return;
-            }
-
-            const formData = new FormData();
-            formData.append("file", excelInput.files[0]);
-
-            try {
-              const response = await fetch("/generate-dxf/", {
-                method: "POST",
-                body: formData,
-              });
-
-              if (!response.ok) throw new Error("DXF ZIP generation failed");
-
-              const blob = await response.blob();
-              const url = window.URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = "Doors.zip";
-              document.body.appendChild(a);
-              a.click();
-              a.remove();
-            } catch (err) {
-              alert(err.message);
-            }
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Single_door.dxf';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+          } catch (err) {
+            alert('❌ ' + err.message);
+          } finally {
+            form.classList.remove('loading');
           }
-        });
+        } else if (currentMode === 'bulk') {
+          if (!excelInput.files.length) {
+            alert('⚠️ Please select an Excel file!');
+            form.classList.remove('loading');
+            return;
+          }
+
+          const formData = new FormData();
+          formData.append('file', excelInput.files[0]);
+
+          try {
+            const response = await fetch('/generate-dxf/', {
+              method: 'POST',
+              body: formData,
+            });
+
+            if (!response.ok) throw new Error('DXF ZIP generation failed');
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Doors.zip';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+          } catch (err) {
+            alert('❌ ' + err.message);
+          } finally {
+            form.classList.remove('loading');
+          }
+        }
+      });
     </script>
   </body>
 </html>

@@ -2,71 +2,311 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DXF Generator</title>
     <style>
-      body {
-        font-family: Arial;
-        margin: 30px;
+      /* ========== BASE VARIABLES ========== */
+      :root {
+        --gap: 12px;
+        --pad: 16px;
+        --muted: #666;
+        --accent: #1976d2;
+        --bg: #f6f9fc;
+        --card: #ffffff;
       }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg);
+        font-family: Inter, Roboto, Arial, sans-serif;
+        color: #111;
+      }
+
+      /* ========== CONTAINER & HEADINGS ========== */
+      .container {
+        max-width: 900px;
+        margin: 20px auto;
+        padding: var(--pad);
+      }
+
+      h2 {
+        margin: 0 0 10px 0;
+        text-align: center;
+      }
+
+      h4 {
+        margin: 12px 0 8px 0;
+        color: #333;
+      }
+
+      /* ========== FORM CARD ========== */
+      form {
+        background: var(--card);
+        border-radius: 8px;
+        padding: 18px;
+        box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
+        border: 1px solid #eee;
+      }
+
+      .row {
+        display: flex;
+        gap: var(--gap);
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .mt {
+        margin-top: 10px;
+      }
+
+      label {
+        display: block;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      label input {
+        margin-top: 4px;
+      }
+
+      .field {
+        width: 100%;
+      }
+
+      input[type="number"],
+      input[type="file"],
+      select,
+      .radio-group {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        background: transparent;
+        font-size: 14px;
+      }
+
+      .radio-group {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .controls {
+        display: flex;
+        gap: 12px;
+        margin-top: 14px;
+        justify-content: flex-end;
+      }
+
+      button[type="submit"] {
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        padding: 10px 14px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      button[type="submit"]:hover {
+        background: #1565c0;
+        transition: background 0.2s ease-in-out;
+      }
+
+      /* ========== GRID FOR LARGE SCREENS ========== */
+      @media (min-width: 720px) {
+        .grid-2 {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: var(--gap);
+        }
+      }
+
+      /* ========== MOBILE OPTIMIZATION ========== */
+      @media (max-width: 480px) {
+        .container {
+          margin: 0;
+          padding: 10px;
+        }
+
+        form {
+          padding: 14px;
+          box-shadow: none;
+          border-radius: 0;
+        }
+
+        h2 {
+          font-size: 1.25rem;
+          text-align: center;
+        }
+
+        h4 {
+          font-size: 1rem;
+        }
+
+        input[type="number"],
+        input[type="file"],
+        button {
+          font-size: 15px;
+          padding: 12px;
+        }
+
+        .grid-2 {
+          display: block; /* stack inputs vertically */
+        }
+
+        .controls {
+          justify-content: center;
+        }
+
+        button[type="submit"] {
+          width: 100%; /* big button for thumbs */
+          font-size: 16px;
+        }
+
+        small.note {
+          font-size: 13px;
+          line-height: 1.3;
+        }
+      }
+
       .hidden {
         display: none;
       }
-      label {
+
+      small.note {
         display: block;
-        margin-top: 10px;
-      }
-      input[type="number"] {
-        width: 100px;
+        margin-top: 6px;
+        color: var(--muted);
       }
     </style>
   </head>
   <body>
-    <h2>DXF Generator</h2>
+    <div class="container">
+      <h2>DXF Generator</h2>
 
-    <form id="dxfForm">
-      <label>
-        Execution Type:
-        <input type="radio" name="executionType" value="single" checked />
-        Single <input type="radio" name="executionType" value="bulk" /> Bulk
-      </label>
+      <form id="dxfForm">
+        <div class="row">
+          <div style="flex: 1">
+            <label>Execution Type</label>
+            <div class="radio-group">
+              <label style="margin: 0; color: inherit"
+                ><input
+                  type="radio"
+                  name="executionType"
+                  value="single"
+                  checked
+                />
+                Single</label
+              >
+              <label style="margin: 0; color: inherit"
+                ><input type="radio" name="executionType" value="bulk" />
+                Bulk</label
+              >
+            </div>
+            <small class="note"
+              >Choose Single to enter parameters or Bulk to upload an Excel
+              file.</small
+            >
+          </div>
+        </div>
 
-      <div id="singleInputs">
-        <h4>Single Door Parameters (user input)</h4>
-        <label
-          >Width Measurement:
-          <input type="number" name="width_measurement" value="600"
-        /></label>
-        <label
-          >Height Measurement:
-          <input type="number" name="height_measurement" value="1105"
-        /></label>
-        <label
-          >Left Side Allowance Width:
-          <input type="number" name="left_side_allowance_width" value="25"
-        /></label>
-        <label
-          >Right Side Allowance Width:
-          <input type="number" name="right_side_allowance_width" value="25"
-        /></label>
-        <label
-          >Left Side Allowance Height:
-          <input type="number" name="left_side_allowance_height" value="25"
-        /></label>
-        <label
-          >Right Side Allowance Height:
-          <input type="number" name="right_side_allowance_height" value="0"
-        /></label>
-      </div>
+        <div id="singleInputs" class="mt">
+          <h4>Single Door Parameters</h4>
+          <div class="grid-2">
+            <div>
+              <label
+                >Width Measurement (mm)
+                <input
+                  type="number"
+                  name="width_measurement"
+                  value="600"
+                  class="field"
+                />
+              </label>
+            </div>
 
-      <div id="bulkInputs" class="hidden">
-        <label>
-          Select Excel File:
-          <input type="file" id="excelFile" name="excelFile" accept=".xlsx" />
-        </label>
-      </div>
+            <div>
+              <label
+                >Height Measurement (mm)
+                <input
+                  type="number"
+                  name="height_measurement"
+                  value="1105"
+                  class="field"
+                />
+              </label>
+            </div>
 
-      <button type="submit">Generate DXF</button>
-    </form>
+            <div>
+              <label
+                >Left Side Allowance Width (mm)
+                <input
+                  type="number"
+                  name="left_side_allowance_width"
+                  value="25"
+                  class="field"
+                />
+              </label>
+            </div>
+
+            <div>
+              <label
+                >Right Side Allowance Width (mm)
+                <input
+                  type="number"
+                  name="right_side_allowance_width"
+                  value="25"
+                  class="field"
+                />
+              </label>
+            </div>
+
+            <div>
+              <label
+                >Left Side Allowance Height (mm)
+                <input
+                  type="number"
+                  name="left_side_allowance_height"
+                  value="25"
+                  class="field"
+                />
+              </label>
+            </div>
+
+            <div>
+              <label
+                >Right Side Allowance Height (mm)
+                <input
+                  type="number"
+                  name="right_side_allowance_height"
+                  value="0"
+                  class="field"
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div id="bulkInputs" class="hidden">
+          <h4>Bulk DXF (Excel)</h4>
+          <label
+            >Select Excel File
+            <input type="file" id="excelFile" name="excelFile" accept=".xlsx" />
+          </label>
+          <small class="note"
+            >Excel should contain required columns for door generation.</small
+          >
+        </div>
+
+        <div class="controls">
+          <button type="submit">Generate DXF</button>
+        </div>
+      </form>
+    </div>
 
     <script>
       const executionRadios = document.querySelectorAll(

@@ -6,3 +6,12 @@ openpyxl==3.1.2
 python-multipart==0.0.6
 fastapi>=0.100.0
 pydantic>=2.0.0
+ezdxf
+fastapi>=0.100.0
+matplotlib
+openpyxl
+pandas
+pydantic>=2.0.0
+python-multipart
+rectpack
+uvicorn[standard]

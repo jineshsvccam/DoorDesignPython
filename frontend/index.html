@@ -28,7 +28,8 @@
         height: 100%;
         margin: 0;
         background: var(--bg);
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, Arial, sans-serif;
         color: var(--text);
       }
 
@@ -215,7 +216,7 @@
       }
 
       button[type="submit"]::before {
-        content: '';
+        content: "";
         position: absolute;
         top: 50%;
         left: 50%;
@@ -314,7 +315,7 @@
       }
 
       .loading button[type="submit"]::after {
-        content: '';
+        content: "";
         position: absolute;
         width: 16px;
         height: 16px;
@@ -328,13 +329,20 @@
       }
 
       @keyframes spin {
-        to { transform: translate(-50%, -50%) rotate(360deg); }
+        to {
+          transform: translate(-50%, -50%) rotate(360deg);
+        }
       }
 
       /* ========== SECTION DIVIDERS ========== */
       .section-divider {
         height: 1px;
-        background: linear-gradient(90deg, transparent, var(--border), transparent);
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--border),
+          transparent
+        );
         margin: 24px 0;
       }
 
@@ -354,7 +362,7 @@
   </head>
   <body>
     <div class="container">
-      <h2>DXF Generator</h2>
+      <h2>DXF Generator J</h2>
 
       <form id="dxfForm">
         <div class="toggle-container">
@@ -463,96 +471,96 @@
     </div>
 
     <script>
-      const toggleSwitch = document.getElementById('toggleSwitch');
-      const toggleSlider = document.getElementById('toggleSlider');
-      const toggleOptions = document.querySelectorAll('.toggle-option');
-      const toggleHint = document.getElementById('toggleHint');
-      const singleInputsDiv = document.getElementById('singleInputs');
-      const bulkInputsDiv = document.getElementById('bulkInputs');
-      const excelInput = document.getElementById('excelFile');
-      const form = document.getElementById('dxfForm');
+      const toggleSwitch = document.getElementById("toggleSwitch");
+      const toggleSlider = document.getElementById("toggleSlider");
+      const toggleOptions = document.querySelectorAll(".toggle-option");
+      const toggleHint = document.getElementById("toggleHint");
+      const singleInputsDiv = document.getElementById("singleInputs");
+      const bulkInputsDiv = document.getElementById("bulkInputs");
+      const excelInput = document.getElementById("excelFile");
+      const form = document.getElementById("dxfForm");
 
-      let currentMode = 'single';
+      let currentMode = "single";
       let touchStartX = 0;
       let touchEndX = 0;
 
       function setTogglePosition() {
-        const activeOption = document.querySelector('.toggle-option.active');
+        const activeOption = document.querySelector(".toggle-option.active");
         const sliderWidth = activeOption.offsetWidth;
         const sliderLeft = activeOption.offsetLeft;
-        
-        toggleSlider.style.width = sliderWidth + 'px';
+
+        toggleSlider.style.width = sliderWidth + "px";
         toggleSlider.style.transform = `translateX(${sliderLeft - 4}px)`;
       }
 
       function switchMode(mode) {
         if (currentMode === mode) return;
-        
+
         currentMode = mode;
-        
-        toggleOptions.forEach(option => {
+
+        toggleOptions.forEach((option) => {
           if (option.dataset.value === mode) {
-            option.classList.add('active');
+            option.classList.add("active");
           } else {
-            option.classList.remove('active');
+            option.classList.remove("active");
           }
         });
 
         setTogglePosition();
 
-        if (mode === 'bulk') {
-          bulkInputsDiv.classList.remove('hidden');
-          bulkInputsDiv.classList.add('fade-in');
-          singleInputsDiv.classList.add('hidden');
+        if (mode === "bulk") {
+          bulkInputsDiv.classList.remove("hidden");
+          bulkInputsDiv.classList.add("fade-in");
+          singleInputsDiv.classList.add("hidden");
           excelInput.required = true;
-          toggleHint.textContent = 'Upload Excel file';
+          toggleHint.textContent = "Upload Excel file";
         } else {
-          singleInputsDiv.classList.remove('hidden');
-          singleInputsDiv.classList.add('fade-in');
-          bulkInputsDiv.classList.add('hidden');
+          singleInputsDiv.classList.remove("hidden");
+          singleInputsDiv.classList.add("fade-in");
+          bulkInputsDiv.classList.add("hidden");
           excelInput.required = false;
-          toggleHint.textContent = 'Enter parameters below';
+          toggleHint.textContent = "Enter parameters below";
         }
       }
 
-      toggleOptions.forEach(option => {
-        option.addEventListener('click', () => {
+      toggleOptions.forEach((option) => {
+        option.addEventListener("click", () => {
           switchMode(option.dataset.value);
         });
       });
 
-      toggleSwitch.addEventListener('touchstart', (e) => {
+      toggleSwitch.addEventListener("touchstart", (e) => {
         touchStartX = e.changedTouches[0].screenX;
       });
 
-      toggleSwitch.addEventListener('touchend', (e) => {
+      toggleSwitch.addEventListener("touchend", (e) => {
         touchEndX = e.changedTouches[0].screenX;
         handleSwipe();
       });
 
       function handleSwipe() {
         const swipeThreshold = 50;
-        
+
         if (touchEndX < touchStartX - swipeThreshold) {
-          switchMode('bulk');
+          switchMode("bulk");
         }
-        
+
         if (touchEndX > touchStartX + swipeThreshold) {
-          switchMode('single');
+          switchMode("single");
         }
       }
 
       setTogglePosition();
-      window.addEventListener('resize', setTogglePosition);
+      window.addEventListener("resize", setTogglePosition);
 
-      form.addEventListener('submit', async (e) => {
+      form.addEventListener("submit", async (e) => {
         e.preventDefault();
-        
-        form.classList.add('loading');
 
-        if (currentMode === 'single') {
+        form.classList.add("loading");
+
+        if (currentMode === "single") {
           const data = {};
-          singleInputsDiv.querySelectorAll('input').forEach((input) => {
+          singleInputsDiv.querySelectorAll("input").forEach((input) => {
             data[input.name] = parseFloat(input.value);
           });
 
@@ -561,61 +569,61 @@
             door_minus_measurement_height: 70,
             bending_width: 31,
             bending_height: 24,
-            file_name: 'Single_door.dxf',
+            file_name: "Single_door.dxf",
           });
 
           try {
-            const response = await fetch('/generate-single-dxf/', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+            const response = await fetch("/generate-single-dxf/", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify(data),
             });
 
-            if (!response.ok) throw new Error('DXF generation failed');
+            if (!response.ok) throw new Error("DXF generation failed");
 
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
+            const a = document.createElement("a");
             a.href = url;
-            a.download = 'Single_door.dxf';
+            a.download = "Single_door.dxf";
             document.body.appendChild(a);
             a.click();
             a.remove();
           } catch (err) {
-            alert('❌ ' + err.message);
+            alert("❌ " + err.message);
           } finally {
-            form.classList.remove('loading');
+            form.classList.remove("loading");
           }
-        } else if (currentMode === 'bulk') {
+        } else if (currentMode === "bulk") {
           if (!excelInput.files.length) {
-            alert('⚠️ Please select an Excel file!');
-            form.classList.remove('loading');
+            alert("⚠️ Please select an Excel file!");
+            form.classList.remove("loading");
             return;
           }
 
           const formData = new FormData();
-          formData.append('file', excelInput.files[0]);
+          formData.append("file", excelInput.files[0]);
 
           try {
-            const response = await fetch('/generate-dxf/', {
-              method: 'POST',
+            const response = await fetch("/generate-dxf/", {
+              method: "POST",
               body: formData,
             });
 
-            if (!response.ok) throw new Error('DXF ZIP generation failed');
+            if (!response.ok) throw new Error("DXF ZIP generation failed");
 
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
+            const a = document.createElement("a");
             a.href = url;
-            a.download = 'Doors.zip';
+            a.download = "Doors.zip";
             document.body.appendChild(a);
             a.click();
             a.remove();
           } catch (err) {
-            alert('❌ ' + err.message);
+            alert("❌ " + err.message);
           } finally {
-            form.classList.remove('loading');
+            form.classList.remove("loading");
           }
         }
       });

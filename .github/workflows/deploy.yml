@@ -1,0 +1,30 @@
+name: 🚀 Deploy FastAPI to EC2
+
+on:
+  push:
+    branches:
+      - main # change this if your main branch has a different name
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ec2-user/DoorDesignPython
+            git pull origin main
+            echo "Pulled latest code"
+            pip3 install -r requirements.txt
+            echo "Dependencies installed"
+            pkill -f "uvicorn" || true
+            nohup uvicorn fastapi_app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 &
+            echo "FastAPI restarted successfully"

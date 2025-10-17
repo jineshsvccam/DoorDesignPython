@@ -55,8 +55,8 @@ jobs:
             echo "Checking for existing uvicorn processes..."
             if pgrep -f "uvicorn" > /dev/null; then
               echo "Stopping existing uvicorn..."
-              pkill -f "uvicorn" || true  # Ignore pkill errors
-              sleep 2  # Wait for processes to terminate
+              pkill -f "uvicorn" || true  # Ignore pkill exit code
+              sleep 3  # Wait for processes to terminate
             else
               echo "No uvicorn process found"
             fi
@@ -75,6 +75,7 @@ jobs:
               echo "FastAPI started successfully!"
             else
               echo "Failed to start FastAPI"
+              cat app.log
               exit 1
             fi
 

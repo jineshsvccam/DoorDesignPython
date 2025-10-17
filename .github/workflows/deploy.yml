@@ -1,42 +1,25 @@
-name: 🚀 Deploy FastAPI to EC2
+name: Deploy to EC2
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   deploy:
+    name: Deploy to EC2 via SSH
     runs-on: ubuntu-latest
-
     steps:
-      # Step 1: Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Test SSH connection
-      - name: Test SSH Connection
+      - name: Run remote deployment script on EC2
         uses: appleboy/ssh-action@v1.1.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            echo "Testing SSH connection..."
-            whoami
-            hostname
-            pwd
-            echo "SSH connection successful"
-
-      # Step 3: Deploy to EC2
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.1.0
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            set -e  # Exit on any error
+            set -e
             echo "Starting deployment..."
 
             # Move to project directory
@@ -51,27 +34,28 @@ jobs:
             echo "Installing dependencies..."
             pip3 install --user -r requirements.txt || { echo "Dependency installation failed"; exit 1; }
 
-            # Stop any running uvicorn processes safely
-            echo "Checking for existing uvicorn processes..."
-            if pgrep -f "uvicorn" > /dev/null; then
-            echo "Stopping existing uvicorn..."
-            pkill -u $USER -f "uvicorn" || true  # Only kill uvicorn processes owned by the deploy user
-            sleep 3
+            # Stop any running uvicorn process using PID file
+            echo "Checking for existing uvicorn process..."
+            if [ -f uvicorn.pid ]; then
+              echo "Stopping existing uvicorn..."
+              kill $(cat uvicorn.pid) || true
+              rm -f uvicorn.pid
+              sleep 3
             else
-            echo "No uvicorn process found"
+              echo "No uvicorn PID file found"
             fi
 
-            # Start FastAPI with nohup in background
+            # Start FastAPI with nohup and save PID
             echo "Starting FastAPI..."
-            nohup uvicorn fastapi_app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 &
+            nohup uvicorn fastapi_app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 & echo $! > uvicorn.pid
 
             # Give it time to start
             sleep 5
             echo "Current uvicorn processes:"
-            ps aux | grep '[u]vicorn' || { echo "No uvicorn processes running"; }
+            ps aux | grep '[u]vicorn.*fastapi_app.main:app' || { echo "No uvicorn processes running"; }
 
             # Verify FastAPI is running
-            if pgrep -f "uvicorn" > /dev/null; then
+            if [ -f uvicorn.pid ] && ps -p $(cat uvicorn.pid) > /dev/null; then
               echo "FastAPI started successfully!"
             else
               echo "Failed to start FastAPI"

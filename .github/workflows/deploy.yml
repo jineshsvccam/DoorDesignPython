@@ -36,7 +36,6 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            set -e  # exit if any command fails
             echo "Starting deployment..."
 
             # Move to project directory
@@ -52,10 +51,14 @@ jobs:
             pip3 install -r requirements.txt
 
             # Stop any running uvicorn processes safely
-            echo "Stopping previous FastAPI process (if any)..."
-            pkill -f "uvicorn" 2>/dev/null || echo "No uvicorn process found"
+            if pgrep -f "uvicorn" > /dev/null; then
+            echo "Stopping existing uvicorn..."
+            pkill -f "uvicorn"
+            else
+                echo "No uvicorn process found"
+            fi
+                # Start FastAPI with nohup in background
 
-            # Start FastAPI with nohup in background
             echo "Starting FastAPI..."
             nohup uvicorn fastapi_app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 &
 

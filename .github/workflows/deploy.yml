@@ -42,7 +42,9 @@ jobs:
             echo "Installing dependencies..."
             pip3 install -r requirements.txt
             echo "Stopping previous FastAPI process (if any)..."
-            pkill -f "uvicorn" || true
+            pkill -f "uvicorn" 2>/dev/null || echo "No uvicorn process found"
             echo "Starting FastAPI..."
             nohup uvicorn fastapi_app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 &
-            echo "Deployment completed successfully!"
+            sleep 2
+            ps aux | grep uvicorn
+            echo "FastAPI deployment completed."

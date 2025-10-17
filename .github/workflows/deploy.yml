@@ -3,7 +3,7 @@ name: 🚀 Deploy FastAPI to EC2
 on:
   push:
     branches:
-      - main # adjust if your main branch has a different name
+      - main
 
 jobs:
   deploy:
@@ -28,7 +28,7 @@ jobs:
             pwd
             echo "SSH connection successful"
 
-      # Step 3: Deploy FastAPI
+      # Step 3: Deploy to EC2
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.1.0
         with:
@@ -36,35 +36,46 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            set -e  # Exit on any error
             echo "Starting deployment..."
 
             # Move to project directory
-            cd /home/ec2-user/DoorDesignPython
+            cd /home/ec2-user/DoorDesignPython || { echo "Failed to change directory"; exit 1; }
             echo "Current directory: $(pwd)"
 
             # Pull latest code
             echo "Pulling latest code..."
-            git pull origin main
+            git pull origin main || { echo "Git pull failed"; exit 1; }
 
             # Install/update dependencies
             echo "Installing dependencies..."
-            pip3 install -r requirements.txt
+            pip3 install --user -r requirements.txt || { echo "Dependency installation failed"; exit 1; }
 
             # Stop any running uvicorn processes safely
+            echo "Checking for existing uvicorn processes..."
             if pgrep -f "uvicorn" > /dev/null; then
-            echo "Stopping existing uvicorn..."
-            pkill -f "uvicorn"
+              echo "Stopping existing uvicorn..."
+              pkill -f "uvicorn" || true  # Ignore pkill errors
+              sleep 2  # Wait for processes to terminate
             else
-                echo "No uvicorn process found"
+              echo "No uvicorn process found"
             fi
-                # Start FastAPI with nohup in background
 
+            # Start FastAPI with nohup in background
             echo "Starting FastAPI..."
             nohup uvicorn fastapi_app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 &
 
-            # Give it a moment to start and check
-            sleep 2
+            # Give it time to start
+            sleep 5
             echo "Current uvicorn processes:"
-            ps aux | grep uvicorn
+            ps aux | grep '[u]vicorn' || { echo "No uvicorn processes running"; }
+
+            # Verify FastAPI is running
+            if pgrep -f "uvicorn" > /dev/null; then
+              echo "FastAPI started successfully!"
+            else
+              echo "Failed to start FastAPI"
+              exit 1
+            fi
 
             echo "Deployment completed successfully!"

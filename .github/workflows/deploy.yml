@@ -3,17 +3,18 @@ name: 🚀 Deploy FastAPI to EC2
 on:
   push:
     branches:
-      - main # change if your main branch is different
+      - main # adjust if your main branch has a different name
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
+      # Step 1: Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Debug step to confirm SSH works
+      # Step 2: Test SSH connection
       - name: Test SSH Connection
         uses: appleboy/ssh-action@v1.1.0
         with:
@@ -27,6 +28,7 @@ jobs:
             pwd
             echo "SSH connection successful"
 
+      # Step 3: Deploy FastAPI
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.1.0
         with:
@@ -36,15 +38,30 @@ jobs:
           script: |
             set -e  # exit if any command fails
             echo "Starting deployment..."
+
+            # Move to project directory
             cd /home/ec2-user/DoorDesignPython
+            echo "Current directory: $(pwd)"
+
+            # Pull latest code
             echo "Pulling latest code..."
             git pull origin main
+
+            # Install/update dependencies
             echo "Installing dependencies..."
             pip3 install -r requirements.txt
+
+            # Stop any running uvicorn processes safely
             echo "Stopping previous FastAPI process (if any)..."
             pkill -f "uvicorn" 2>/dev/null || echo "No uvicorn process found"
+
+            # Start FastAPI with nohup in background
             echo "Starting FastAPI..."
             nohup uvicorn fastapi_app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 &
+
+            # Give it a moment to start and check
             sleep 2
+            echo "Current uvicorn processes:"
             ps aux | grep uvicorn
-            echo "FastAPI deployment completed."
+
+            echo "Deployment completed successfully!"

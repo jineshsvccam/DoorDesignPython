@@ -85,6 +85,66 @@ if (subType) {
   });
 }
 
+// Populate fire options depending on door type
+function populateFireOptions(doorTypeValue = "single") {
+  if (!fireOption) return;
+  // clear existing
+  fireOption.innerHTML = "";
+
+  if (doorTypeValue === "double") {
+    // double: only two options
+    const opts = [
+      {
+        value: "standard",
+        label: "Standard Fire Door (Top 150 / Bottom 240 / L-R 190)",
+      },
+      {
+        value: "fourglass",
+        label: "Four glass with centre aligned from top and bottom",
+      },
+    ];
+    opts.forEach((o) => {
+      const el = document.createElement("option");
+      el.value = o.value;
+      el.textContent = o.label;
+      fireOption.appendChild(el);
+    });
+  } else {
+    // single: three options (keep original labels)
+    const opts = [
+      {
+        value: "standard",
+        label: "Standard Fire Door (Top 170 / Bottom 240 / L-R 190)",
+      },
+      {
+        value: "topfixed",
+        label: "Top-Fixed Fire Door (Top 170 / Bottom Flexible / L-R 190)",
+      },
+      {
+        value: "bottomfixed",
+        label: "Bottom-Fixed Fire Door (Bottom 240 / Top Flexible / L-R 190)",
+      },
+    ];
+    opts.forEach((o) => {
+      const el = document.createElement("option");
+      el.value = o.value;
+      el.textContent = o.label;
+      fireOption.appendChild(el);
+    });
+  }
+}
+
+// When doorType changes, repopulate fire options
+if (doorType) {
+  doorType.addEventListener("change", () => {
+    populateFireOptions(doorType.value);
+    // If subtype is fire, ensure container reflects any change
+    if (subType && subType.value === "fire") {
+      fireOptionsContainer.classList.remove("hidden");
+    }
+  });
+}
+
 // Show/hide allowance inputs based on defaultAllowance
 if (defaultAllowance) {
   defaultAllowance.addEventListener("change", () => {
@@ -114,6 +174,8 @@ document.addEventListener("DOMContentLoaded", () => {
   if (subType && subType.value === "fire") {
     fireOptionsContainer.classList.remove("hidden");
   }
+  // Populate fire options according to initial door type
+  populateFireOptions(doorType ? doorType.value : "single");
 });
 
 toggleSwitch.addEventListener("touchstart", (e) => {

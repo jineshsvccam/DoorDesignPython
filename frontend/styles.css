@@ -1,0 +1,390 @@
+/* Extracted styles from index.html */
+/* ========== BASE VARIABLES ========== */
+:root {
+  --gap: 12px;
+  --pad: 16px;
+  --muted: #64748b;
+  --accent: #14b8a6;
+  --accent-hover: #0d9488;
+  --bg: #0f172a;
+  --card: #1e293b;
+  --text: #f1f5f9;
+  --border: #334155;
+  --shadow: rgba(0, 0, 0, 0.3);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Arial, sans-serif;
+  color: var(--text);
+}
+
+/* ========== CONTAINER & HEADINGS ========== */
+.container {
+  max-width: 900px;
+  margin: 40px auto;
+  padding: var(--pad);
+}
+
+h2 {
+  margin: 0 0 24px 0;
+  text-align: center;
+  font-size: 2.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), #06b6d4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+h4 {
+  margin: 20px 0 12px 0;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+/* ========== FORM CARD ========== */
+form {
+  background: var(--card);
+  border-radius: 20px;
+  padding: 32px;
+  box-shadow: 0 20px 60px var(--shadow);
+  border: 1px solid var(--border);
+}
+
+.row {
+  display: flex;
+  gap: var(--gap);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.mt {
+  margin-top: 24px;
+}
+
+label {
+  display: block;
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.field {
+  width: 100%;
+}
+
+input[type="number"],
+input[type="file"],
+select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #0f172a;
+  color: var(--text);
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+input[type="number"]:focus,
+input[type="file"]:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.1);
+}
+
+/* ========== MODERN TOGGLE SWITCH ========== */
+.toggle-container {
+  display: flex;
+  justify-content: center;
+  margin: 20px 0;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-flex;
+  background: #0f172a;
+  border-radius: 50px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  user-select: none;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.toggle-option {
+  position: relative;
+  padding: 12px 32px;
+  cursor: pointer;
+  z-index: 2;
+  transition: color 0.3s ease;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.toggle-option.active {
+  color: white;
+}
+
+.toggle-slider {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  height: calc(100% - 8px);
+  background: linear-gradient(135deg, var(--accent), #06b6d4);
+  border-radius: 50px;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(20, 184, 166, 0.4);
+  z-index: 1;
+}
+
+.toggle-hint {
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 12px;
+}
+
+/* ========== INPUT GROUPS ========== */
+.input-group {
+  position: relative;
+}
+
+.input-group input {
+  padding-right: 45px;
+}
+
+.input-suffix {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+/* ========== CONTROLS ========== */
+.controls {
+  display: flex;
+  gap: 12px;
+  margin-top: 28px;
+  justify-content: center;
+}
+
+button[type="submit"] {
+  background: linear-gradient(135deg, var(--accent), #06b6d4);
+  color: white;
+  border: none;
+  padding: 14px 40px;
+  border-radius: 50px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 16px;
+  transition: all 0.3s ease;
+  box-shadow: 0 8px 24px rgba(20, 184, 166, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+button[type="submit"]:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(20, 184, 166, 0.4);
+}
+
+button[type="submit"]:active {
+  transform: translateY(0);
+}
+
+button[type="submit"]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+button[type="submit"]:hover::before {
+  width: 300px;
+  height: 300px;
+}
+
+/* ========== GRID FOR LARGE SCREENS ========== */
+@media (min-width: 720px) {
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+}
+
+/* ========== MOBILE OPTIMIZATION ========== */
+@media (max-width: 480px) {
+  .container {
+    margin: 20px auto;
+    padding: 12px;
+  }
+
+  form {
+    padding: 20px;
+    border-radius: 16px;
+  }
+
+  h2 {
+    font-size: 1.8rem;
+  }
+
+  h4 {
+    font-size: 1rem;
+  }
+
+  .toggle-option {
+    padding: 10px 24px;
+    font-size: 14px;
+  }
+
+  input[type="number"],
+  input[type="file"],
+  button {
+    font-size: 15px;
+  }
+
+  button[type="submit"] {
+    width: 100%;
+    padding: 16px 32px;
+  }
+}
+
+/* ========== UTILITY CLASSES ========== */
+.hidden {
+  display: none;
+}
+
+small.note {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* ========== FADE ANIMATIONS ========== */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeInOut {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  10%,
+  90% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+}
+
+/* ========== LOADING STATE ========== */
+.loading {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.loading button[type="submit"]::after {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  top: 50%;
+  left: 50%;
+  margin-left: 10px;
+  border: 2px solid transparent;
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+/* ========== SECTION DIVIDERS ========== */
+.section-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+  margin: 24px 0;
+}
+
+/* ========== FILE INPUT STYLING ========== */
+input[type="file"] {
+  padding: 20px;
+  border: 2px dashed var(--border);
+  background: rgba(20, 184, 166, 0.05);
+  cursor: pointer;
+}
+
+input[type="file"]:hover {
+  border-color: var(--accent);
+  background: rgba(20, 184, 166, 0.1);
+}
+
+/* End of extracted styles */
+
+/* Footer & copyright styles moved from inline attributes */
+.copyright-badge {
+  position: fixed;
+  bottom: 10px;
+  right: 15px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.site-footer {
+  text-align: center;
+  margin-top: 40px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.author-highlight {
+  color: #14b8a6;
+  font-weight: 600;
+}

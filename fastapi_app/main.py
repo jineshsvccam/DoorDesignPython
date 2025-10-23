@@ -1,5 +1,6 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body
 from fastapi.responses import FileResponse
+import asyncio
 import tempfile, os, sys
 from pathlib import Path
 
@@ -9,9 +10,10 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 # Import your DXF generator helper
 from BatchDoorDXFGenerator import generate_zip_from_excel
-from pydantic import BaseModel
 from typing import Optional
 from DoorDrawingGenerator import DoorDrawingGenerator
+from fastapi_app.schemas_input import DoorDXFRequest
+from door_geometry import compute_door_geometry
 
 # Serve the frontend static files and allow CORS for external UI (optional)
 from fastapi.staticfiles import StaticFiles
@@ -78,53 +80,62 @@ async def generate_dxf(file: UploadFile = File(...)):
             pass
 
 
-class SingleDoorParams(BaseModel):
-    width_measurement: float
-    height_measurement: float
-    left_side_allowance_width: Optional[float] = 25
-    right_side_allowance_width: Optional[float] = 25
-    left_side_allowance_height: Optional[float] = 25
-    right_side_allowance_height: Optional[float] = 0
-    door_minus_measurement_width: Optional[float] = 68
-    door_minus_measurement_height: Optional[float] = 70
-    bending_width: Optional[float] = 31
-    bending_height: Optional[float] = 24
-    file_name: Optional[str] = "door_output.dxf"
-
-
 @app.post("/generate-single-dxf/")
-def generate_single_dxf(params: SingleDoorParams):
-    """Generate one DXF from JSON parameters and return the DXF file."""
+async def generate_single_dxf(params: DoorDXFRequest = Body(...)):
+    """Generate one DXF from JSON parameters and return the DXF file.
+
+    The generator is synchronous/blocking, so we run it in a thread to avoid
+    blocking the event loop. The generator now accepts the Pydantic model.
+    """
     script_dir = Path(__file__).resolve().parents[1]
     output_dir = Path(script_dir) / "output"
     output_dir.mkdir(exist_ok=True)
 
-    filename = params.file_name or "door_output.dxf"
+    # Sanitize filename to avoid path traversal and ensure a basename
+    filename = os.path.basename(params.metadata.file_name or "door_output.dxf")
     out_path = output_dir / filename
 
-    # Prepare kwargs for the generator
-    gen_kwargs = params.dict()
-
-    # Ensure save_file=True so DoorDrawingGenerator writes the DXF to disk
-    gen_kwargs.update({
-        'file_name': str(out_path),
-        'isannotationRequired': True,
-        'save_file': True,
-        # Provide doc/msp if generator supports them; DoorDrawingGenerator will handle defaults
-    })
-
     try:
-        DoorDrawingGenerator.generate_door_dxf(**gen_kwargs)
+        # run the potentially blocking generation in a thread
+        await asyncio.to_thread(DoorDrawingGenerator.generate_door_dxf, params, file_name=str(out_path), isannotationRequired=True, save_file=True)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DXF generation failed: {e}")
 
     if not out_path.exists():
         raise HTTPException(status_code=500, detail="DXF file was not created")
 
-    return FileResponse(path=str(out_path), filename=out_path.name, media_type="application/dxf")
+    # Return the file and force download via Content-Disposition header
+    return FileResponse(
+        path=str(out_path),
+        filename=out_path.name,
+        media_type="application/dxf",
+        headers={"Content-Disposition": f'attachment; filename="{out_path.name}"'}
+    )
+
+
+@app.post("/dxf/geometry")
+async def get_dxf_geometry(params: DoorDXFRequest = Body(...)):
+    """Return computed geometry JSON (no DXF writing) for preview or frontend use."""
+    try:
+        schema = compute_door_geometry(params)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return schema.dict()
 
 
 if __name__ == "__main__":
     # When running locally or on Replit this will use the PORT env var if present.
     port = int(os.environ.get("PORT", 8000))
+    # Optional debug attach: set DEBUG_WAIT=1 in env to wait for debugger attach
+    if os.environ.get("DEBUG_WAIT") == "1":
+        try:
+            import debugpy
+            print("Waiting for debugger to attach on 5678...")
+            debugpy.listen(5678)
+            debugpy.wait_for_client()
+            print("Debugger attached, continuing...")
+        except Exception:
+            print("debugpy not available or failed to start; continuing without debugger")
+
     uvicorn.run("fastapi_app.main:app", host="0.0.0.0", port=port, log_level="info")

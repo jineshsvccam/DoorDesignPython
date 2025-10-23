@@ -239,10 +239,60 @@ form.addEventListener("submit", async (e) => {
     }
 
     try {
+      // Build request payload matching the DoorDXFRequest schema expected by the server
+      const requestPayload = {
+        mode: "generate",
+        door: {
+          category: doorType
+            ? doorType.value === "double"
+              ? "Double"
+              : "Single"
+            : "Single",
+          type: subType ? subType.value || "Normal" : "Normal",
+          option:
+            fireOption && !fireOptionsContainer.classList.contains("hidden")
+              ? fireOption.value || null
+              : null,
+          hole_offset: holeOffset ? holeOffset.value : "",
+          default_allowance: defaultAllowance ? defaultAllowance.value : "yes",
+        },
+        dimensions: {
+          width_measurement: Number(data.width_measurement) || 0,
+          height_measurement: Number(data.height_measurement) || 0,
+          left_side_allowance_width:
+            Number(data.left_side_allowance_width) || 25,
+          right_side_allowance_width:
+            Number(data.right_side_allowance_width) || 25,
+          top_side_allowance_height:
+            Number(data.top_side_allowance_height) || 25,
+          bottom_side_allowance_height:
+            Number(data.bottom_side_allowance_height) || 25,
+        },
+        metadata: {
+          label: data.file_name
+            ? data.file_name.replace(/\.dxf$/i, "")
+            : "Single",
+          file_name: data.file_name || "Single_door.dxf",
+          width: 0,
+          height: 0,
+          rotated: false,
+          is_annotation_required: true,
+          offset: [0.0, 0.0],
+        },
+        defaults: {
+          door_minus_measurement_width:
+            Number(data.door_minus_measurement_width) || 68,
+          door_minus_measurement_height:
+            Number(data.door_minus_measurement_height) || 70,
+          bending_width: Number(data.bending_width) || 31,
+          bending_height: Number(data.bending_height) || 24,
+        },
+      };
+
       const response = await fetch("/generate-single-dxf/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(requestPayload),
       });
 
       if (!response.ok) throw new Error("DXF generation failed");

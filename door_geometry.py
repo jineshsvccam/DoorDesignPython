@@ -38,9 +38,13 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
 
     # Door-minus and bending values come from defaults (or could be added to dimensions)
     door_minus_measurement_width = defaults.door_minus_measurement_width
+    # If this is a double door, include the configured gap between leaves
+    if (door.category or "").strip().lower() == "double":
+        door_minus_measurement_width += defaults.double_door_gap
     door_minus_measurement_height = defaults.door_minus_measurement_height
     bending_width = defaults.bending_width
     bending_height = defaults.bending_height
+    bending_width_double_door = defaults.bending_width_double_door
 
     label_name = request.metadata.label if hasattr(request.metadata, 'label') else None
     file_name = request.metadata.file_name if hasattr(request.metadata, 'file_name') else None
@@ -54,13 +58,39 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
     frame_total_height = height_measurement + left_side_allowance_height + right_side_allowance_height
     inner_width = frame_total_width - door_minus_measurement_width
     inner_height = frame_total_height - door_minus_measurement_height
-    outer_width = inner_width + bending_width
+
+    # Double-door handling: compute a per-leaf width without mutating the total inner_width
+    is_double = (door.category or "").strip().lower() == "double"
+    double_gap = defaults.double_door_gap if is_double else 0.0
+
+    if is_double:
+        usable = inner_width # - double_gap
+        if usable <= 0:
+            # Defensive fallback: split evenly if gap too large
+            leaf_width = inner_width / 2.0
+            gap = double_gap
+        else:
+            leaf_width = usable / 2.0
+            gap = double_gap
+    else:
+        leaf_width = inner_width
+        gap = 0.0
+
+    outer_width = leaf_width + bending_width
+    outer_width_left = leaf_width + bending_width_double_door
+
     outer_height = inner_height + bending_height
+
     bend_adjust = defaults.bend_adjust
+    # Right-leaf inner offset (preserve existing single-door behavior)
     inner_offset_x = bending_width - bend_adjust
     inner_offset_y = bend_adjust - bending_height
 
-    # Local points (before translation/rotation)
+    # Left-leaf will be placed to the left of the right leaf by this shift
+    shift_left = leaf_width + gap
+    inner_offset_x_left = bend_adjust
+
+    # Local points (right-leaf, before translation/rotation)
     outer_pts = [
         (0, 0),
         (outer_width, 0),
@@ -69,14 +99,23 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
         (0, 0),
     ]
 
-
     inner_pts = [
         (inner_offset_x, inner_offset_y),
-        (inner_offset_x + inner_width, inner_offset_y),
-        (inner_offset_x + inner_width, inner_offset_y + outer_height),
+        (inner_offset_x + leaf_width, inner_offset_y),
+        (inner_offset_x + leaf_width, inner_offset_y + outer_height),
         (inner_offset_x, inner_offset_y + outer_height),
         (inner_offset_x, inner_offset_y),
     ]
+
+    # If double, precompute left-leaf points (shifted left) so translation keeps everything visible
+    left_outer_pts = []
+    left_inner_pts = []
+    left_handle_pts = []
+    left_circle_top = None
+    left_circle_bottom = None
+    if is_double:
+        left_outer_pts = [(x - shift_left, y) for (x, y) in outer_pts]
+        left_inner_pts = [(x - shift_left, y) for (x, y) in inner_pts]
 
     # center handle defaults (rectangle). 
     handle_gap = defaults.box_gap
@@ -93,6 +132,19 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
         (handle_left_x, handle_bottom_y),
     ]
 
+    # Left-leaf handle: place on the right offset of the left leaf (near meeting stile)
+    left_handle_pts = []
+    if is_double:
+        # left leaf right edge (local coords) = inner_offset_x - shift_left + leaf_width
+        left_handle_left_x = inner_offset_x - shift_left + leaf_width - handle_gap - handle_width
+        left_handle_pts = [
+            (left_handle_left_x, handle_bottom_y),
+            (left_handle_left_x + handle_width, handle_bottom_y),
+            (left_handle_left_x + handle_width, handle_bottom_y + handle_height),
+            (left_handle_left_x, handle_bottom_y + handle_height),
+            (left_handle_left_x, handle_bottom_y),
+        ]
+
     # circles
     left_circle_offset = defaults.left_circle_offset
     top_circle_offset = defaults.top_circle_offset
@@ -101,8 +153,9 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
     circle_center_y_bottom = top_circle_offset + inner_offset_y + bend_adjust
 
     # compute translation to keep all coords non-negative (same logic)
-    all_x = [p[0] for p in outer_pts + inner_pts + handle_pts + [(circle_center_x, circle_center_y_top), (circle_center_x, circle_center_y_bottom)]]
-    all_y = [p[1] for p in outer_pts + inner_pts + handle_pts + [(circle_center_x, circle_center_y_top), (circle_center_x, circle_center_y_bottom)]]
+    # Include left-leaf points in bounds if double so translation keeps them visible
+    all_x = [p[0] for p in outer_pts + left_outer_pts + inner_pts + left_inner_pts + handle_pts + [(circle_center_x, circle_center_y_top), (circle_center_x, circle_center_y_bottom)]]
+    all_y = [p[1] for p in outer_pts + left_outer_pts + inner_pts + left_inner_pts + handle_pts + [(circle_center_x, circle_center_y_top), (circle_center_x, circle_center_y_bottom)]]
     min_x = min(all_x)
     min_y = min(all_y)
     worst_negative_dim_offset = -5 
@@ -121,6 +174,8 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
     outer_trans = [transform_point(p) for p in outer_pts]
     inner_trans = [transform_point(p) for p in inner_pts]
     handle_trans = [transform_point(p) for p in handle_pts]
+    # Transform left handle points if present (double doors)
+    left_handle_trans = [transform_point(p) for p in left_handle_pts] if left_handle_pts else []
     circle_top = transform_point((circle_center_x, circle_center_y_top))
     circle_bottom = transform_point((circle_center_x, circle_center_y_bottom))
 
@@ -132,6 +187,15 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
         Frame(name="outer", layer="CUT", points=outer_trans, width=outer_w, height=outer_h),
         Frame(name="inner", layer="CUT", points=inner_trans, width=inner_w, height=inner_h)
     ]
+
+    # If double door, add the left leaf frames first so output shows left then right
+    if is_double and left_outer_pts and left_inner_pts:
+        left_outer_trans = [transform_point(p) for p in left_outer_pts]
+        left_inner_trans = [transform_point(p) for p in left_inner_pts]
+        left_ow, left_oh = compute_frame_dimensions(left_outer_trans)
+        left_iw, left_ih = compute_frame_dimensions(left_inner_trans)
+        frames.insert(0, Frame(name="inner_left", layer="CUT", points=left_inner_trans, width=left_iw, height=left_ih))
+        frames.insert(0, Frame(name="outer_left", layer="CUT", points=left_outer_trans, width=left_ow, height=left_oh))
 
     # Determine final cutout(s) based on door info options
     door_info = door
@@ -272,7 +336,11 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
         ]
         keybox_cutout = Cutout(name="keybox", layer="CUT", points=[transform_point(p) for p in kb_pts])
 
-    # Always add the center handle cutout from the handle default geometry
+    # If double, add left handle cutout (placed near meeting stile of left leaf)
+    if is_double and left_handle_trans:
+        cutouts.append(Cutout(name="left_handle", layer="CUT", points=left_handle_trans))
+
+    # Always add the center handle cutout from the handle default geometry (right leaf / single door)
     cutouts.append(Cutout(name="center_handle", layer="CUT", points=handle_trans))
     # Add the glass cutout separately (may be same as handle when using defaults)
     cutouts.append(Cutout(name="glass_cut", layer="CUT", points=glass_trans))
@@ -456,10 +524,10 @@ def main() -> None:
     from fastapi_app.schemas_input import DoorDXFRequest, DoorInfo, DimensionInfo, DefaultInfo
 
     # Build a sample request
-    door_info = DoorInfo(category="Single", type="Fire", option="standard", hole_offset="center", default_allowance="standard")
+    door_info = DoorInfo(category="double", type="Normal", option="standard", hole_offset="center", default_allowance="standard")
     dims = DimensionInfo(
-        width_measurement=895.0,
-        height_measurement=1765.0,
+        width_measurement=1240.0,
+        height_measurement=1615.0,
         left_side_allowance_width=25.0,
         right_side_allowance_width=25.0,
         top_side_allowance_height=25.0,

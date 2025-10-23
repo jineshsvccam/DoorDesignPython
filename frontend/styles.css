@@ -185,7 +185,8 @@ select:focus {
   justify-content: center;
 }
 
-button[type="submit"] {
+/* Primary button used for Generate and Preview */
+.btn-primary {
   background: linear-gradient(135deg, var(--accent), #06b6d4);
   color: white;
   border: none;
@@ -200,16 +201,16 @@ button[type="submit"] {
   overflow: hidden;
 }
 
-button[type="submit"]:hover {
+.btn-primary:hover {
   transform: translateY(-2px);
   box-shadow: 0 12px 32px rgba(20, 184, 166, 0.4);
 }
 
-button[type="submit"]:active {
+.btn-primary:active {
   transform: translateY(0);
 }
 
-button[type="submit"]::before {
+.btn-primary::before {
   content: "";
   position: absolute;
   top: 50%;
@@ -222,9 +223,18 @@ button[type="submit"]::before {
   transition: width 0.6s, height 0.6s;
 }
 
-button[type="submit"]:hover::before {
+.btn-primary:hover::before {
   width: 300px;
   height: 300px;
+}
+
+/* Ensure controls buttons render identically and don't collapse */
+.controls button.btn-primary {
+  display: inline-block;
+  min-width: 140px; /* keeps Preview button similar width to Generate */
+  text-align: center;
+  padding-left: 40px;
+  padding-right: 40px;
 }
 
 /* ========== GRID FOR LARGE SCREENS ========== */
@@ -267,7 +277,7 @@ button[type="submit"]:hover::before {
     font-size: 15px;
   }
 
-  button[type="submit"] {
+  .btn-primary {
     width: 100%;
     padding: 16px 32px;
   }

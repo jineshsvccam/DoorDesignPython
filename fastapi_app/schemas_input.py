@@ -10,6 +10,7 @@ class DefaultInfo(BaseModel):
     right_side_allowance_height: float = 25.0
     door_minus_measurement_width: float = 68.0
     door_minus_measurement_height: float = 70.0
+    bending_width_double_door: float = 43.0
     bending_width: float = 31.0
     bending_height: float = 24.0
     # Visual and geometry defaults
@@ -35,6 +36,7 @@ class DefaultInfo(BaseModel):
     fire_glass_lr_margin: float = 190.0
     fire_glass_top_margin: float = 170.0
     fire_glass_bottom_margin: float = 240.0
+    double_door_gap: float = 3.0
 
 
 class DoorInfo(BaseModel):

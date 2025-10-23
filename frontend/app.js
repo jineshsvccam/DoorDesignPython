@@ -545,13 +545,17 @@ function drawGeometryToSVG(geometry) {
   const scale = Math.min(targetW / vbW, targetH / vbH);
 
   const offsetX = (1000 - vbW * scale) / 2 - minX * scale;
-  const offsetY = (1000 - vbH * scale) / 2 - minY * scale;
+  // For SVG we flip Y (SVG y increases downward). Map CAD y-up to SVG y-down so
+  // CAD maxY maps to top padding and CAD minY maps to bottom padding.
+  const paddingY = (1000 - vbH * scale) / 2;
 
   function toSvgX(x) {
     return x * scale + offsetX;
   }
+
   function toSvgY(y) {
-    return y * scale + offsetY;
+    // flip Y: place maxY at top padding, minY at bottom padding
+    return paddingY + (maxY - y) * scale;
   }
 
   // helper to create svg elements

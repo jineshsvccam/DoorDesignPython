@@ -27,6 +27,14 @@ class DefaultInfo(BaseModel):
     dim_arrow_size: float = 6.0
     horizontal_dim_visual_offset: float = 20.0
     vertical_dim_visual_offset: float = 40.0
+    # Keybox defaults (width x height in points, bottom offset from inner bottom)
+    keybox_width: float = 70.0
+    keybox_height: float = 40.0
+    keybox_bottom_offset: float = 50.0
+    # Fire door glass margins (defaults)
+    fire_glass_lr_margin: float = 190.0
+    fire_glass_top_margin: float = 170.0
+    fire_glass_bottom_margin: float = 240.0
 
 
 class DoorInfo(BaseModel):

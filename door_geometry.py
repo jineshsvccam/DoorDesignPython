@@ -142,9 +142,9 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
         lower = option_in.lower()
         if "option1" in lower or lower == "option 1" or lower == "1" or "standard" in lower:
             opt_normalized = "Option1"
-        elif "option2" in lower or lower == "option 2" or lower == "2" or "opt2" in lower:
+        elif "option2" in lower or lower == "option 2" or lower == "2" or "topfixed" in lower:
             opt_normalized = "Option2"
-        elif "option3" in lower or lower == "option 3" or lower == "3" or "opt3" in lower:
+        elif "option3" in lower or lower == "option 3" or lower == "3" or "bottomfixed" in lower:
             opt_normalized = "Option3"
 
     cutouts = []
@@ -159,22 +159,26 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
     # If Single Fire door, apply the user's margin rules for Option1/2/3
     pts_box = None
     if _eq_str(door_info.category, "single") and _eq_str(door_info.type, "fire"):
-        # Per-request margins
-        left_margin = right_margin = 190
-        top_margin = bottom_margin = 150
+        # Per-request margins (use configurable defaults)
+        left_margin = right_margin = defaults.fire_glass_lr_margin
+        top_margin = defaults.fire_glass_top_margin
+        bottom_margin = defaults.fire_glass_bottom_margin
 
         if opt_normalized == "Option1":
-            left_margin = right_margin = 190.0
-            top_margin = 170.0
-            bottom_margin = 240.0
+            # use configured defaults (explicit for clarity)
+            left_margin = right_margin = defaults.fire_glass_lr_margin
+            top_margin = defaults.fire_glass_top_margin
+            bottom_margin = defaults.fire_glass_bottom_margin
         elif opt_normalized == "Option2":
-            left_margin = right_margin = 190.0
-            top_margin = 170.0
-            bottom_margin = top_margin  # flexible -> set equal to top
+            left_margin = right_margin = defaults.fire_glass_lr_margin
+            top_margin = defaults.fire_glass_top_margin
+            # extend the glass down to the centerline of the inner panel
+            bottom_margin = inner_height / 2.0
         elif opt_normalized == "Option3":
-            left_margin = right_margin = 190.0
-            bottom_margin = 240.0
-            top_margin = bottom_margin  # flexible -> set equal to bottom
+            left_margin = right_margin = defaults.fire_glass_lr_margin
+            bottom_margin = defaults.fire_glass_bottom_margin
+            # extend the glass up to the centerline of the inner panel
+            top_margin = inner_height / 2.0
 
         # Compute glass rectangle in inner-local coordinates (0..inner_width, 0..inner_height)
         glass_left_local = left_margin
@@ -245,10 +249,36 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
         pts_box = handle_pts
     glass_trans = [transform_point(p) for p in pts_box]
 
+    # Add keybox (fire doors only) - centered at bottom, offset above inner bottom by default
+    keybox_cutout = None
+    if _eq_str(door_info.type, "fire"):
+        kb_w = defaults.keybox_width
+        kb_h = defaults.keybox_height
+        kb_offset = defaults.keybox_bottom_offset
+        # compute local center bottom within inner local coords then convert to absolute
+        kb_center_x_local = inner_width / 2.0
+        kb_left_local = kb_center_x_local - kb_w / 2.0
+        kb_bottom_local = kb_offset
+        kb_left = inner_offset_x + kb_left_local
+        kb_bottom = inner_offset_y + kb_bottom_local
+        # shift up by bend_adjust so keybox sits above the bend like glass
+        kb_bottom += bend_adjust
+        kb_pts = [
+            (kb_left, kb_bottom),
+            (kb_left + kb_w, kb_bottom),
+            (kb_left + kb_w, kb_bottom + kb_h),
+            (kb_left, kb_bottom + kb_h),
+            (kb_left, kb_bottom),
+        ]
+        keybox_cutout = Cutout(name="keybox", layer="CUT", points=[transform_point(p) for p in kb_pts])
+
     # Always add the center handle cutout from the handle default geometry
     cutouts.append(Cutout(name="center_handle", layer="CUT", points=handle_trans))
     # Add the glass cutout separately (may be same as handle when using defaults)
     cutouts.append(Cutout(name="glass_cut", layer="CUT", points=glass_trans))
+    # Append keybox if created
+    if keybox_cutout is not None:
+        cutouts.append(keybox_cutout)
    
     holes = [
         Hole(name="hole_top", layer="CUT", center=circle_top, radius=defaults.circle_radius),

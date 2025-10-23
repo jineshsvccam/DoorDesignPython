@@ -17,6 +17,9 @@ class DefaultInfo(BaseModel):
     box_gap: float = 30.0
     box_width: float = 22.0
     box_height: float = 112.0
+    # Glass visual defaults
+    glass_corner_radius: float = 20.0
+    glass_segments: int = 8
     circle_radius: float = 5.0
     left_circle_offset: float = 40.0
     top_circle_offset: float = 150.0

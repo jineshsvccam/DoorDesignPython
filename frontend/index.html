@@ -165,6 +165,62 @@
 
         <div class="controls">
           <button type="submit">Generate DXF</button>
+          <button type="button" id="previewBtn">Preview</button>
+        </div>
+        <div id="previewContainer" class="mt">
+          <h4>Preview Result</h4>
+          <div style="display: flex; gap: 12px; align-items: flex-start">
+            <pre
+              id="previewBox"
+              class="hidden"
+              style="
+                width: 48%;
+                max-height: 300px;
+                overflow: auto;
+                background: #111;
+                color: #eee;
+                padding: 12px;
+                border-radius: 6px;
+              "
+            ></pre>
+            <div
+              id="svgPreviewWrapper"
+              style="
+                width: 48%;
+                background: #fff;
+                border-radius: 6px;
+                padding: 8px;
+                border: 1px solid #ddd;
+                display: flex;
+                flex-direction: column;
+                align-items: stretch;
+              "
+            >
+              <svg
+                id="svgPreview"
+                viewBox="0 0 1000 1000"
+                preserveAspectRatio="xMidYMid meet"
+                style="
+                  width: 100%;
+                  height: 300px;
+                  background: #f8f9fb;
+                  border-radius: 4px;
+                "
+              >
+                <!-- geometry will be drawn here -->
+              </svg>
+              <div
+                style="
+                  margin-top: 6px;
+                  text-align: center;
+                  font-size: 12px;
+                  color: #666;
+                "
+              >
+                SVG schematic preview (scaled)
+              </div>
+            </div>
+          </div>
         </div>
       </form>
     </div>

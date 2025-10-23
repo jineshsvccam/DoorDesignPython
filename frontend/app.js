@@ -240,6 +240,15 @@ form.addEventListener("submit", async (e) => {
 
     try {
       // Build request payload matching the DoorDXFRequest schema expected by the server
+      // safe numeric parse helper: preserves explicit 0, rejects NaN
+      function toNumberOrDefault(value, defaultVal) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : defaultVal;
+      }
+
+      const allowanceDefault =
+        defaultAllowance && defaultAllowance.value === "yes" ? 25 : 0;
+
       const requestPayload = {
         mode: "generate",
         door: {
@@ -257,16 +266,24 @@ form.addEventListener("submit", async (e) => {
           default_allowance: defaultAllowance ? defaultAllowance.value : "yes",
         },
         dimensions: {
-          width_measurement: Number(data.width_measurement) || 0,
-          height_measurement: Number(data.height_measurement) || 0,
-          left_side_allowance_width:
-            Number(data.left_side_allowance_width) || 25,
-          right_side_allowance_width:
-            Number(data.right_side_allowance_width) || 25,
-          top_side_allowance_height:
-            Number(data.top_side_allowance_height) || 25,
-          bottom_side_allowance_height:
-            Number(data.bottom_side_allowance_height) || 25,
+          width_measurement: toNumberOrDefault(data.width_measurement, 0),
+          height_measurement: toNumberOrDefault(data.height_measurement, 0),
+          left_side_allowance_width: toNumberOrDefault(
+            data.left_side_allowance_width,
+            allowanceDefault
+          ),
+          right_side_allowance_width: toNumberOrDefault(
+            data.right_side_allowance_width,
+            allowanceDefault
+          ),
+          top_side_allowance_height: toNumberOrDefault(
+            data.top_side_allowance_height,
+            allowanceDefault
+          ),
+          bottom_side_allowance_height: toNumberOrDefault(
+            data.bottom_side_allowance_height,
+            allowanceDefault
+          ),
         },
         metadata: {
           label: data.file_name
@@ -345,6 +362,397 @@ form.addEventListener("submit", async (e) => {
     }
   }
 });
+
+// Helper to build the same request payload used for generation
+function buildRequestPayload() {
+  const data = {};
+  singleInputsDiv.querySelectorAll("input").forEach((input) => {
+    data[input.name] = parseFloat(input.value);
+  });
+  if (doorType) data.door_type = doorType.value;
+  if (subType) data.sub_type = subType.value;
+  if (fireOption && !fireOptionsContainer.classList.contains("hidden"))
+    data.fire_option = fireOption.value;
+  if (holeOffset) data.hole_offset = holeOffset.value;
+  if (defaultAllowance) data.default_allowance = defaultAllowance.value;
+
+  Object.assign(data, {
+    door_minus_measurement_width: 68,
+    door_minus_measurement_height: 70,
+    bending_width: 31,
+    bending_height: 24,
+    file_name: "Single_door.dxf",
+  });
+
+  // Map allowances back to backend keys if present
+  if (data.top_side_allowance_height !== undefined) {
+    data.left_side_allowance_height = data.top_side_allowance_height;
+  }
+  if (data.bottom_side_allowance_height !== undefined) {
+    data.right_side_allowance_height = data.bottom_side_allowance_height;
+  }
+
+  function toNumberOrDefault(value, defaultVal) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : defaultVal;
+  }
+
+  const allowanceDefault =
+    defaultAllowance && defaultAllowance.value === "yes" ? 25 : 0;
+
+  const requestPayload = {
+    mode: "generate",
+    door: {
+      category: doorType
+        ? doorType.value === "double"
+          ? "Double"
+          : "Single"
+        : "Single",
+      type: subType ? subType.value || "Normal" : "Normal",
+      option:
+        fireOption && !fireOptionsContainer.classList.contains("hidden")
+          ? fireOption.value || null
+          : null,
+      hole_offset: holeOffset ? holeOffset.value : "",
+      default_allowance: defaultAllowance ? defaultAllowance.value : "yes",
+    },
+    dimensions: {
+      width_measurement: toNumberOrDefault(data.width_measurement, 0),
+      height_measurement: toNumberOrDefault(data.height_measurement, 0),
+      left_side_allowance_width: toNumberOrDefault(
+        data.left_side_allowance_width,
+        allowanceDefault
+      ),
+      right_side_allowance_width: toNumberOrDefault(
+        data.right_side_allowance_width,
+        allowanceDefault
+      ),
+      top_side_allowance_height: toNumberOrDefault(
+        data.top_side_allowance_height,
+        allowanceDefault
+      ),
+      bottom_side_allowance_height: toNumberOrDefault(
+        data.bottom_side_allowance_height,
+        allowanceDefault
+      ),
+    },
+    metadata: {
+      label: data.file_name ? data.file_name.replace(/\.dxf$/i, "") : "Single",
+      file_name: data.file_name || "Single_door.dxf",
+      width: 0,
+      height: 0,
+      rotated: false,
+      is_annotation_required: true,
+      offset: [0.0, 0.0],
+    },
+    defaults: {
+      door_minus_measurement_width:
+        Number(data.door_minus_measurement_width) || 68,
+      door_minus_measurement_height:
+        Number(data.door_minus_measurement_height) || 70,
+      bending_width: Number(data.bending_width) || 31,
+      bending_height: Number(data.bending_height) || 24,
+    },
+  };
+
+  return requestPayload;
+}
+
+// Preview button behaviour
+const previewBtn = document.getElementById("previewBtn");
+const previewBox = document.getElementById("previewBox");
+const previewContainer = document.getElementById("previewContainer");
+if (previewBtn) {
+  previewBtn.addEventListener("click", async () => {
+    // Only allow preview in single mode
+    if (currentMode !== "single") {
+      showToast("Preview is only available in Single mode", "error");
+      return;
+    }
+
+    const payload = buildRequestPayload();
+    previewBox.classList.remove("hidden");
+    previewBox.textContent = "Loading...";
+
+    try {
+      const resp = await fetch("/dxf/geometry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!resp.ok) throw new Error("Preview request failed");
+
+      const json = await resp.json();
+      previewBox.textContent = JSON.stringify(json, null, 2);
+      // draw into SVG preview
+      try {
+        drawGeometryToSVG(json.geometry);
+      } catch (err) {
+        console.error("SVG draw error", err);
+      }
+    } catch (err) {
+      previewBox.textContent = "Error: " + err.message;
+    }
+  });
+}
+
+// Render geometry object into svg#svgPreview
+function drawGeometryToSVG(geometry) {
+  const svg = document.getElementById("svgPreview");
+  if (!svg) return;
+  // clear
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  // find bounding box of all points to scale to viewBox
+  const points = [];
+  (geometry.frames || []).forEach((f) =>
+    f.points.forEach((p) => points.push(p))
+  );
+  (geometry.cutouts || []).forEach((c) =>
+    c.points.forEach((p) => points.push(p))
+  );
+  (geometry.holes || []).forEach((h) => points.push(h.center));
+
+  // default view if nothing
+  if (points.length === 0) {
+    // draw placeholder
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("x", 100);
+    rect.setAttribute("y", 100);
+    rect.setAttribute("width", 800);
+    rect.setAttribute("height", 800);
+    rect.setAttribute("fill", "none");
+    rect.setAttribute("stroke", "#ccc");
+    svg.appendChild(rect);
+    return;
+  }
+
+  const xs = points.map((p) => p[0]);
+  const ys = points.map((p) => p[1]);
+  const minX = Math.min(...xs),
+    maxX = Math.max(...xs);
+  const minY = Math.min(...ys),
+    maxY = Math.max(...ys);
+
+  const padding = 20; // px inside viewBox
+  const vbW = Math.max(1, maxX - minX);
+  const vbH = Math.max(1, maxY - minY);
+
+  // compute scale to fit into 1000x1000 minus padding
+  const targetW = 1000 - padding * 2;
+  const targetH = 1000 - padding * 2;
+  const scale = Math.min(targetW / vbW, targetH / vbH);
+
+  const offsetX = (1000 - vbW * scale) / 2 - minX * scale;
+  const offsetY = (1000 - vbH * scale) / 2 - minY * scale;
+
+  function toSvgX(x) {
+    return x * scale + offsetX;
+  }
+  function toSvgY(y) {
+    return y * scale + offsetY;
+  }
+
+  // helper to create svg elements
+  function create(name, attrs) {
+    const el = document.createElementNS("http://www.w3.org/2000/svg", name);
+    for (const k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  // draw frames (outer rectangle etc.)
+  (geometry.frames || []).forEach((f) => {
+    const path =
+      f.points
+        .map(
+          (p, i) =>
+            `${i === 0 ? "M" : "L"} ${toSvgX(p[0]).toFixed(2)} ${toSvgY(
+              p[1]
+            ).toFixed(2)}`
+        )
+        .join(" ") + " Z";
+    const el = create("path", {
+      d: path,
+      fill: "none",
+      stroke: "#0b6394",
+      "stroke-width": 2,
+    });
+    svg.appendChild(el);
+  });
+
+  // draw cutouts
+  (geometry.cutouts || []).forEach((c) => {
+    const path =
+      c.points
+        .map(
+          (p, i) =>
+            `${i === 0 ? "M" : "L"} ${toSvgX(p[0]).toFixed(2)} ${toSvgY(
+              p[1]
+            ).toFixed(2)}`
+        )
+        .join(" ") + " Z";
+    const el = create("path", {
+      d: path,
+      fill: "#ffffff",
+      stroke: "#e85",
+      "stroke-width": 1.5,
+    });
+    svg.appendChild(el);
+  });
+
+  // draw holes
+  (geometry.holes || []).forEach((h) => {
+    const cx = toSvgX(h.center[0]);
+    const cy = toSvgY(h.center[1]);
+    const r = Math.max(1, h.radius * scale);
+    const circle = create("circle", { cx: cx, cy: cy, r: r, fill: "#333" });
+    svg.appendChild(circle);
+  });
+
+  // center label if provided
+  (geometry.labels || []).forEach((l) => {
+    if (l.type === "center_label" && l.position === "center") {
+      const txt = create("text", {
+        x: 500,
+        y: 500,
+        "text-anchor": "middle",
+        "dominant-baseline": "middle",
+        fill: "#222",
+        "font-size": 14,
+      });
+      txt.textContent = l.text;
+      svg.appendChild(txt);
+    }
+  });
+}
+// draw width/height dimensions for first two frames
+function drawDimLine(x1, y1, x2, y2, label, opts = {}) {
+  const { tick = 6, textSize = 14, color = "#c0392b" } = opts; // brighter color
+  // main line
+  const line = create("line", {
+    x1: x1,
+    y1: y1,
+    x2: x2,
+    y2: y2,
+    stroke: color,
+    "stroke-width": 1.6,
+  });
+  svg.appendChild(line);
+  // ticks at ends (perpendicular)
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1;
+  let px = (-dy / len) * tick;
+  let py = (dx / len) * tick;
+  // choose outward direction for ticks relative to svg center (500,500)
+  const midx = (x1 + x2) / 2;
+  const midy = (y1 + y2) / 2;
+  const dirSign = (midx - 500) * px + (midy - 500) * py >= 0 ? 1 : -1;
+  px *= dirSign;
+  py *= dirSign;
+  const t1 = create("line", {
+    x1: x1,
+    y1: y1,
+    x2: x1 + px,
+    y2: y1 + py,
+    stroke: color,
+    "stroke-width": 1.6,
+  });
+  svg.appendChild(t1);
+  const t2 = create("line", {
+    x1: x2,
+    y1: y2,
+    x2: x2 + px,
+    y2: y2 + py,
+    stroke: color,
+    "stroke-width": 1.6,
+  });
+  svg.appendChild(t2);
+  // endpoint markers for visibility
+  const m1 = create("circle", { cx: x1, cy: y1, r: 2.2, fill: color });
+  svg.appendChild(m1);
+  const m2 = create("circle", { cx: x2, cy: y2, r: 2.2, fill: color });
+  svg.appendChild(m2);
+  // label
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2;
+  // prefer horizontal label with small white background for contrast
+  const labelX = mx + px * 2.5;
+  const labelY = my + py * 2.5;
+  const txt = create("text", {
+    x: labelX,
+    y: labelY,
+    fill: "#000",
+    "font-size": textSize,
+    "text-anchor": "middle",
+    "dominant-baseline": "middle",
+  });
+  txt.textContent = label;
+  // add background rect behind text for readability
+  // approximate text width
+  const approxWidth = Math.max(40, label.length * (textSize * 0.6));
+  const rect = create("rect", {
+    x: labelX - approxWidth / 2 - 6,
+    y: labelY - textSize / 1.6 - 4,
+    width: approxWidth + 12,
+    height: textSize * 1.6 + 6,
+    fill: "#fff",
+    stroke: "#ddd",
+    rx: 3,
+    ry: 3,
+  });
+  svg.appendChild(rect);
+  svg.appendChild(txt);
+}
+
+const fs = geometry.frames || [];
+if (fs.length >= 1) {
+  const f = fs[0];
+  const xs = f.points.map((p) => p[0]);
+  const ys = f.points.map((p) => p[1]);
+  const minX = Math.min(...xs),
+    maxX = Math.max(...xs);
+  const minY = Math.min(...ys),
+    maxY = Math.max(...ys);
+  const dimOffset = 40; // px (increased so dims sit further from box)
+  // bottom dimension (width)
+  const bx1 = toSvgX(minX),
+    by = toSvgY(maxY) + dimOffset;
+  const bx2 = toSvgX(maxX);
+  const widthVal = Math.round(maxX - minX);
+  drawDimLine(bx1, by, bx2, by, `${widthVal} mm`, { tick: 6 });
+  // right dimension (height)
+  const rx = toSvgX(maxX) + dimOffset;
+  const ry1 = toSvgY(minY),
+    ry2 = toSvgY(maxY);
+  const heightVal = Math.round(maxY - minY);
+  // draw vertical line and rotated text
+  drawDimLine(rx, ry1, rx, ry2, `${heightVal} mm`, { tick: 6 });
+}
+
+if (fs.length >= 2) {
+  const f = fs[1];
+  const xs = f.points.map((p) => p[0]);
+  const ys = f.points.map((p) => p[1]);
+  const minX = Math.min(...xs),
+    maxX = Math.max(...xs);
+  const minY = Math.min(...ys),
+    maxY = Math.max(...ys);
+  const dimOffset = 40; // px
+  // top dimension (width) - above the box
+  const tx1 = toSvgX(minX),
+    ty = toSvgY(minY) - dimOffset;
+  const tx2 = toSvgX(maxX);
+  const widthVal = Math.round(maxX - minX);
+  drawDimLine(tx1, ty, tx2, ty, `${widthVal} mm`, { tick: 6 });
+  // left dimension (height)
+  const lx = toSvgX(minX) - dimOffset;
+  const ly1 = toSvgY(minY),
+    ly2 = toSvgY(maxY);
+  const heightVal = Math.round(maxY - minY);
+  drawDimLine(lx, ly1, lx, ly2, `${heightVal} mm`, { tick: 6 });
+}
 
 function showToast(msg, type = "success") {
   const toast = document.createElement("div");

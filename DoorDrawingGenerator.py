@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """DoorDrawingGenerator.py
 
 Generate DXF files for door designs with annotated dimensions and cutouts.
@@ -8,7 +10,7 @@ from ezdxf.filemanagement import new
 from typing import Tuple, Optional, Union
 from ezdxf.document import Drawing
 from ezdxf.layouts.layout import Modelspace
-from door_geometry import compute_door_geometry
+from geometry.door_geometry import compute_door_geometry
 from fastapi_app.schemas_input import DoorDXFRequest
 
 class DoorDrawingGenerator:

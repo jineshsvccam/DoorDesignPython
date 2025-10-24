@@ -29,6 +29,92 @@ let currentMode = "single";
 let touchStartX = 0;
 let touchEndX = 0;
 
+// Validation rules
+const MIN_DIM = 200;
+const MAX_DIM = 2000;
+const MIN_ALLOW = 0;
+const MAX_ALLOW = 50;
+
+function markInvalid(el) {
+  if (!el) return;
+  el.style.outline = "2px solid rgba(220,20,60,0.9)";
+  el.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+function clearInvalid(el) {
+  if (!el) return;
+  el.style.outline = "";
+}
+
+function validateInputs() {
+  // returns { ok: bool, messages: [string], firstEl: HTMLElement|null }
+  const msgs = [];
+  let firstEl = null;
+
+  // width and height required
+  const widthIn = document.querySelector('input[name="width_measurement"]');
+  const heightIn = document.querySelector('input[name="height_measurement"]');
+  const width = Number(widthIn && widthIn.value);
+  const height = Number(heightIn && heightIn.value);
+
+  // clear prior outlines
+  clearInvalid(widthIn);
+  clearInvalid(heightIn);
+
+  if (!Number.isFinite(width) || width <= 0) {
+    msgs.push("Width is required and must be a number.");
+    firstEl = firstEl || widthIn;
+    markInvalid(widthIn);
+  } else if (width < MIN_DIM || width > MAX_DIM) {
+    msgs.push(`Width must be between ${MIN_DIM} and ${MAX_DIM} mm.`);
+    firstEl = firstEl || widthIn;
+    markInvalid(widthIn);
+  }
+
+  if (!Number.isFinite(height) || height <= 0) {
+    msgs.push("Height is required and must be a number.");
+    firstEl = firstEl || heightIn;
+    markInvalid(heightIn);
+  } else if (height < MIN_DIM || height > MAX_DIM) {
+    msgs.push(`Height must be between ${MIN_DIM} and ${MAX_DIM} mm.`);
+    firstEl = firstEl || heightIn;
+    markInvalid(heightIn);
+  }
+
+  // allowances: if allowance inputs visible (defaultAllowance === 'no') validate them
+  const defaultAllow = defaultAllowance && defaultAllowance.value === "yes";
+  if (!defaultAllow) {
+    const allowNames = [
+      "left_side_allowance_width",
+      "right_side_allowance_width",
+      "top_side_allowance_height",
+      "bottom_side_allowance_height",
+    ];
+    for (const name of allowNames) {
+      const el = document.querySelector(`input[name="${name}"]`);
+      if (!el) continue;
+      clearInvalid(el);
+      const v = Number(el.value);
+      if (!Number.isFinite(v)) {
+        msgs.push(`${name.replace(/_/g, " ")} must be a number.`);
+        firstEl = firstEl || el;
+        markInvalid(el);
+      } else if (v < MIN_ALLOW || v > MAX_ALLOW) {
+        msgs.push(
+          `${name.replace(
+            /_/g,
+            " "
+          )} must be between ${MIN_ALLOW} and ${MAX_ALLOW} mm.`
+        );
+        firstEl = firstEl || el;
+        markInvalid(el);
+      }
+    }
+  }
+
+  return { ok: msgs.length === 0, messages: msgs, firstEl };
+}
+
 function setTogglePosition() {
   const activeOption = document.querySelector(".toggle-option.active");
   const sliderWidth = activeOption.offsetWidth;
@@ -235,6 +321,18 @@ window.addEventListener("resize", setTogglePosition);
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
+
+  // validate before doing any work
+  if (currentMode === "single") {
+    const v = validateInputs();
+    if (!v.ok) {
+      showToast("Please fix input errors: " + v.messages.join(" "), "error");
+      // remove loading state if previously set
+      form.classList.remove("loading");
+      if (v.firstEl) v.firstEl.focus();
+      return;
+    }
+  }
 
   form.classList.add("loading");
 
@@ -498,6 +596,14 @@ if (previewBtn) {
     // Only allow preview in single mode
     if (currentMode !== "single") {
       showToast("Preview is only available in Single mode", "error");
+      return;
+    }
+
+    // validate before preview
+    const v = validateInputs();
+    if (!v.ok) {
+      showToast("Please fix input errors: " + v.messages.join(" "), "error");
+      if (v.firstEl) v.firstEl.focus();
       return;
     }
 
@@ -792,13 +898,15 @@ if (fs.length >= 2) {
 function showToast(msg, type = "success") {
   const toast = document.createElement("div");
   toast.textContent = msg;
+  const bg = type === "success" ? "#16a34a" : "#dc2626";
   toast.style.cssText = `
     position: fixed; bottom: 30px; right: 20px;
-    background: ${'${type === "success" ? "#16a34a" : "#dc2626"}'};
+    background: ${bg};
     color: white; padding: 10px 16px; border-radius: 8px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.3); z-index: 9999;
     animation: fadeInOut 3s forwards;
   `;
+  toast.setAttribute("role", "alert");
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 3000);
 }

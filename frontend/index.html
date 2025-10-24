@@ -9,7 +9,19 @@
   <body>
     <div class="container">
       <div class="page-header">
-
+        <h2>DXF Generator</h2>
+        <div class="prepared">
+          Prepared for:
+          <strong>
+            <a
+              href="https://www.capitalgainspvtltd.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Capital Gains Pvt Ltd</a
+            >
+          </strong>
+        </div>
+      </div>
       <form id="dxfForm">
         <div class="toggle-container">
           <div class="toggle-switch" id="toggleSwitch">
@@ -171,56 +183,18 @@
         </div>
         <div id="previewContainer" class="mt">
           <h4>Preview Result</h4>
-          <div style="display: flex; gap: 12px; align-items: flex-start">
-            <pre
-              id="previewBox"
-              class="hidden"
-              style="
-                width: 48%;
-                max-height: 300px;
-                overflow: auto;
-                background: #111;
-                color: #eee;
-                padding: 12px;
-                border-radius: 6px;
-              "
-            ></pre>
-            <div
-              id="svgPreviewWrapper"
-              style="
-                width: 48%;
-                background: #fff;
-                border-radius: 6px;
-                padding: 8px;
-                border: 1px solid #ddd;
-                display: flex;
-                flex-direction: column;
-                align-items: stretch;
-              "
-            >
+          <div class="preview-row">
+            <pre id="previewBox" class="hidden preview-box"></pre>
+            <div id="svgPreviewWrapper" class="svg-preview-wrapper">
               <svg
                 id="svgPreview"
                 viewBox="0 0 1000 1000"
                 preserveAspectRatio="xMidYMid meet"
-                style="
-                  width: 100%;
-                  height: 300px;
-                  background: #f8f9fb;
-                  border-radius: 4px;
-                "
+                class="svg-preview"
               >
                 <!-- geometry will be drawn here -->
               </svg>
-              <div
-                style="
-                  margin-top: 6px;
-                  text-align: center;
-                  font-size: 12px;
-                  color: #666;
-                "
-              >
-                SVG schematic preview (scaled)
-              </div>
+              <div class="svg-preview-note">SVG schematic preview (scaled)</div>
             </div>
           </div>
         </div>

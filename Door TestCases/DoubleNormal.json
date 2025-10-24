@@ -1,0 +1,36 @@
+{
+	"mode": "generate",
+	"door": {
+		"category": "Double",
+		"type": "normal",
+		"option": null,
+		"hole_offset": "80x40",
+		"default_allowance": "no"
+	},
+	"dimensions": {
+		"width_measurement": 1240,
+		"height_measurement": 1615,
+		"left_side_allowance_width": 25,
+		"right_side_allowance_width": 25,
+		"top_side_allowance_height": 25,
+		"bottom_side_allowance_height": 0
+	},
+	"metadata": {
+		"label": "Single_door",
+		"file_name": "Single_door.dxf",
+		"width": 0,
+		"height": 0,
+		"rotated": false,
+		"is_annotation_required": true,
+		"offset": [
+			0,
+			0
+		]
+	},
+	"defaults": {
+		"door_minus_measurement_width": 68,
+		"door_minus_measurement_height": 70,
+		"bending_width": 31,
+		"bending_height": 24
+	}
+}

@@ -13,7 +13,7 @@ from BatchDoorDXFGenerator import generate_zip_from_excel
 from typing import Optional
 from DoorDrawingGenerator import DoorDrawingGenerator
 from fastapi_app.schemas_input import DoorDXFRequest
-from door_geometry import compute_door_geometry
+from geometry.door_geometry import compute_door_geometry
 
 # Serve the frontend static files and allow CORS for external UI (optional)
 from fastapi.staticfiles import StaticFiles

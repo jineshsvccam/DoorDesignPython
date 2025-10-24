@@ -1,0 +1,159 @@
+{
+  "door_category": "Single",
+  "door_type": "Normal",
+  "option": null,
+  "metadata": {
+    "label": "Single_door",
+    "file_name": "Single_door.dxf",
+    "width": 601.0,
+    "height": 1084.0,
+    "rotated": false,
+    "is_annotation_required": true,
+    "offset": [
+      0.0,
+      12.0
+    ]
+  },
+  "geometry": {
+    "frames": [
+      {
+        "name": "outer",
+        "layer": "CUT",
+        "points": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            613.0,
+            0.0
+          ],
+          [
+            613.0,
+            1060.0
+          ],
+          [
+            0.0,
+            1060.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        "width": 613.0,
+        "height": 1060.0
+      },
+      {
+        "name": "inner",
+        "layer": "CUT",
+        "points": [
+          [
+            19.0,
+            -12.0
+          ],
+          [
+            601.0,
+            -12.0
+          ],
+          [
+            601.0,
+            1072.0
+          ],
+          [
+            19.0,
+            1072.0
+          ],
+          [
+            19.0,
+            -12.0
+          ]
+        ],
+        "width": 582.0,
+        "height": 1084.0
+      }
+    ],
+    "cutouts": [
+      {
+        "name": "center_handle",
+        "layer": "CUT",
+        "points": [
+          [
+            49.0,
+            474.0
+          ],
+          [
+            71.0,
+            474.0
+          ],
+          [
+            71.0,
+            586.0
+          ],
+          [
+            49.0,
+            586.0
+          ],
+          [
+            49.0,
+            474.0
+          ]
+        ]
+      },
+      {
+        "name": "glass_cut",
+        "layer": "CUT",
+        "points": [
+          [
+            49.0,
+            474.0
+          ],
+          [
+            71.0,
+            474.0
+          ],
+          [
+            71.0,
+            586.0
+          ],
+          [
+            49.0,
+            586.0
+          ],
+          [
+            49.0,
+            474.0
+          ]
+        ]
+      }
+    ],
+    "holes": [
+      {
+        "name": "hole_top",
+        "layer": "CUT",
+        "center": [
+          59.0,
+          910.0
+        ],
+        "radius": 5.0
+      },
+      {
+        "name": "hole_bottom",
+        "layer": "CUT",
+        "center": [
+          59.0,
+          150.0
+        ],
+        "radius": 5.0
+      }
+    ],
+    "annotations": [],
+    "labels": [
+      {
+        "type": "center_label",
+        "text": "Single_door",
+        "position": "center"
+      }
+    ]
+  }
+}

@@ -340,7 +340,10 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
     # Also skip this generic single-panel path when this is a double fire door
     # with Option1/Option4 selected — that case is handled in the explicit
     # double-fire branch below.
-    if opt_normalized != "Option5" and not (is_double and _eq_str(door_info.type, "fire") and opt_normalized in ("Option1", "Option4")):
+    # Only compute the single-panel glass path for fire doors. Other categories
+    # should not reference left/right/top/bottom margin variables which are only
+    # defined for fire door handling above.
+    if _eq_str(door_info.type, "fire") and opt_normalized != "Option5" and not (is_double and _eq_str(door_info.type, "fire") and opt_normalized in ("Option1", "Option4")):
             # Compute glass rectangle in inner-local coordinates (0..inner_width, 0..inner_height)
             glass_left_local = left_margin
             glass_right_local = inner_width - right_margin

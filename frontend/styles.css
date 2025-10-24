@@ -398,3 +398,16 @@ input[type="file"]:hover {
   color: #14b8a6;
   font-weight: 600;
 }
+
+/* When the UI is switched to bulk mode we force-hide the preview result
+   container but keep the Preview button visible (user expects button to stay).
+*/
+body.bulk-mode #previewContainer {
+  display: none !important;
+}
+
+/* Also hide the Preview button in bulk mode so users don't see it when
+   performing bulk operations. JS will also toggle the `.hidden` class. */
+body.bulk-mode #previewBtn {
+  display: none !important;
+}

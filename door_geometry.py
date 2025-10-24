@@ -203,15 +203,26 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
     option_in = (door_info.option or "").strip()
     opt_normalized = None
     if option_in:
-        lower = option_in.lower()
-        if "option1" in lower or lower == "option 1" or lower == "1" or "standard" in lower:
+        lower = option_in.strip().lower()
+        # Only accept exact, case-insensitive tokens from the UI to avoid accidental substring matches.
+        # Supported UI values: "standard", "topfixed", "bottomfixed", "standard_double", "fourglass"
+        if lower in ("option1", "option 1", "1", "standard"):
             opt_normalized = "Option1"
-        elif "option2" in lower or lower == "option 2" or lower == "2" or "topfixed" in lower:
+        elif lower in ("option2", "option 2", "2", "topfixed"):
             opt_normalized = "Option2"
-        elif "option3" in lower or lower == "option 3" or lower == "3" or "bottomfixed" in lower:
+        elif lower in ("option3", "option 3", "3", "bottomfixed"):
             opt_normalized = "Option3"
+        elif lower in ("standard_double", "standard-double", "standard double"):
+            # treat standard_double as Option4 (UI-specific token -> Option4)
+            opt_normalized = "Option4"
+        elif lower in ("fourglass", "four_glass", "four-glass", "4glass", "4_glass"):
+            # treat fourglass as Option5 (UI-specific token -> Option5)
+            opt_normalized = "Option5"
 
     cutouts = []
+    # Helper: collect per-panel glass polygons when Option5 requires multiple panels.
+    glass_cutouts_to_add: List[List[tuple]] = []
+    add_standard_glass_cutout = True
 
     # Default rounded radius guess
     rounded_radius = min(defaults.box_height / 2.0, defaults.box_width / 2.0)
@@ -243,6 +254,185 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
             bottom_margin = defaults.fire_glass_bottom_margin
             # extend the glass up to the centerline of the inner panel
             top_margin = inner_height / 2.0
+        elif opt_normalized == "Option4":
+            # Option4 behaves like Option1, but uses a different top margin (double-door variant)
+            left_margin = right_margin = defaults.fire_glass_lr_margin
+            top_margin = getattr(defaults, "fire_glass_top_margin_double", defaults.fire_glass_top_margin)
+            bottom_margin = defaults.fire_glass_bottom_margin
+        elif opt_normalized == "Option5":
+            # Option5: create two glass cuttings (top and bottom) for a single door.
+            # For double doors we will create four cuttings (two per leaf) later.
+            left_margin = right_margin = defaults.fire_glass_lr_margin
+            add_standard_glass_cutout = False
+
+            def _make_panel(left_abs, bottom_abs, width_local, height_local):
+                # returns point list or None if invalid
+                if width_local <= 0 or height_local <= 0:
+                    return None
+                radius_p = min(defaults.glass_corner_radius, width_local / 2.0 if width_local else 0.0, height_local / 2.0 if height_local else 0.0)
+                return create_rounded_rect(left_abs, bottom_abs, width_local, height_local, radius_p, segments=defaults.glass_segments)
+
+            # Single-door panels use inner_width; for double we'll handle separately below
+            if not is_double:
+                glass_left_abs = inner_offset_x + left_margin
+                glass_right_abs = inner_offset_x + inner_width - right_margin
+
+                # bottom panel
+                bottom1_abs = inner_offset_y + defaults.fire_glass_bottom_margin
+                top1_abs = inner_offset_y + (inner_height / 2.0 - 50.0)
+                panel1 = _make_panel(glass_left_abs, bottom1_abs, glass_right_abs - glass_left_abs, top1_abs - bottom1_abs)
+
+                # top panel
+                bottom2_abs = inner_offset_y + (inner_height / 2.0 + 50.0)
+                top2_abs = inner_offset_y + inner_height - defaults.fire_glass_top_margin
+                panel2 = _make_panel(glass_left_abs, bottom2_abs, glass_right_abs - glass_left_abs, top2_abs - bottom2_abs)
+
+                # fallback if needed
+                if panel1 is None:
+                    panel1 = create_rounded_box(inner_offset_x + (inner_width - defaults.box_width) / 2.0,
+                                                inner_offset_y + (inner_height - defaults.box_height) / 2.0,
+                                                defaults.box_width, defaults.box_height,
+                                                min(defaults.box_height / 2.0, defaults.box_width / 2.0))
+                if panel2 is None:
+                    panel2 = create_rounded_box(inner_offset_x + (inner_width - defaults.box_width) / 2.0,
+                                                inner_offset_y + (inner_height - defaults.box_height) / 2.0,
+                                                defaults.box_width, defaults.box_height,
+                                                min(defaults.box_height / 2.0, defaults.box_width / 2.0))
+
+                glass_cutouts_to_add.append(dedupe_consecutive_points(panel1))
+                glass_cutouts_to_add.append(dedupe_consecutive_points(panel2))
+            else:
+                # Double door: create two panels per leaf (left + right)
+                # Right leaf origin: inner_offset_x
+                # Left leaf origin: inner_offset_x - shift_left
+                for leaf_offset in (inner_offset_x, inner_offset_x - shift_left):
+                    leaf_width_local = leaf_width
+                    glass_left_abs = leaf_offset + left_margin
+                    glass_right_abs = leaf_offset + leaf_width_local - right_margin
+
+                    # bottom panel per leaf
+                    bottom1_abs = inner_offset_y + defaults.fire_glass_bottom_margin
+                    top1_abs = inner_offset_y + (inner_height / 2.0 - 50.0)
+                    p1 = _make_panel(glass_left_abs, bottom1_abs, glass_right_abs - glass_left_abs, top1_abs - bottom1_abs)
+
+                    # top panel per leaf
+                    bottom2_abs = inner_offset_y + (inner_height / 2.0 + 50.0)
+                    top2_abs = inner_offset_y + inner_height - defaults.fire_glass_top_margin
+                    p2 = _make_panel(glass_left_abs, bottom2_abs, glass_right_abs - glass_left_abs, top2_abs - bottom2_abs)
+
+                    if p1 is None:
+                        p1 = create_rounded_box(leaf_offset + (leaf_width_local - defaults.box_width) / 2.0,
+                                                inner_offset_y + (inner_height - defaults.box_height) / 2.0,
+                                                defaults.box_width, defaults.box_height,
+                                                min(defaults.box_height / 2.0, defaults.box_width / 2.0))
+                    if p2 is None:
+                        p2 = create_rounded_box(leaf_offset + (leaf_width_local - defaults.box_width) / 2.0,
+                                                inner_offset_y + (inner_height - defaults.box_height) / 2.0,
+                                                defaults.box_width, defaults.box_height,
+                                                min(defaults.box_height / 2.0, defaults.box_width / 2.0))
+
+                    glass_cutouts_to_add.append(dedupe_consecutive_points(p1))
+                    glass_cutouts_to_add.append(dedupe_consecutive_points(p2))
+
+    # For Option5 we already constructed two separate glass polygons (pts_box set earlier).
+    # Skip the single-panel glass computation below when Option5 is selected to avoid
+    # overwriting the two-panel result.
+    # Also skip this generic single-panel path when this is a double fire door
+    # with Option1/Option4 selected — that case is handled in the explicit
+    # double-fire branch below.
+    if opt_normalized != "Option5" and not (is_double and _eq_str(door_info.type, "fire") and opt_normalized in ("Option1", "Option4")):
+            # Compute glass rectangle in inner-local coordinates (0..inner_width, 0..inner_height)
+            glass_left_local = left_margin
+            glass_right_local = inner_width - right_margin
+            glass_bottom_local = bottom_margin
+            glass_top_local = inner_height - top_margin
+
+            # validate using local coordinates and fallback to centered default in local coords
+            if glass_right_local <= glass_left_local or glass_top_local <= glass_bottom_local:
+                # fallback to centered default box (local coords)
+                glass_w = defaults.box_width
+                glass_h = defaults.box_height
+                glass_left_local = (inner_width - glass_w) / 2.0
+                glass_bottom_local = (inner_height - glass_h) / 2.0
+                glass_right_local = glass_left_local + glass_w
+                glass_top_local = glass_bottom_local + glass_h
+            else:
+                glass_w = glass_right_local - glass_left_local
+                glass_h = glass_top_local - glass_bottom_local
+
+            # convert local coords to absolute (inner) coords by adding inner offsets
+            glass_left = inner_offset_x + glass_left_local
+            glass_right = inner_offset_x + glass_right_local
+            glass_bottom = inner_offset_y + glass_bottom_local
+            glass_top = inner_offset_y + glass_top_local
+
+            # Shift glass up by the bend adjustment so the visible glass is moved above the bend
+            # (this raises both bottom and top by bend_adjust, typically 12)
+            glass_bottom += bend_adjust
+            glass_top += bend_adjust
+
+            # pick a small corner radius from defaults (rounded rectangle) and create rounded rect
+            radius = min(defaults.glass_corner_radius, glass_w / 2.0 if glass_w else 0.0, glass_h / 2.0 if glass_h else 0.0)
+            pts_box = create_rounded_rect(glass_left, glass_bottom, glass_w, glass_h, radius, segments=defaults.glass_segments)
+            # remove consecutive duplicates for a cleaner polygon
+            pts_box = dedupe_consecutive_points(pts_box)
+
+    # If this is a double fire door and Option5 (fourglass) was requested,
+    # construct two panels per leaf (four total) and skip the single-panel path.
+    # This mirrors the single-door Option5 behavior but repeats per leaf.
+    elif is_double and _eq_str(door_info.type, "fire") and opt_normalized == "Option5":
+        add_standard_glass_cutout = False
+
+        def _make_panel_double(left_abs, bottom_abs, width_local, height_local):
+            if width_local <= 0 or height_local <= 0:
+                return None
+            radius_p = min(defaults.glass_corner_radius, width_local / 2.0 if width_local else 0.0, height_local / 2.0 if height_local else 0.0)
+            return create_rounded_rect(left_abs, bottom_abs, width_local, height_local, radius_p, segments=defaults.glass_segments)
+
+        # Use defaults for margins per leaf
+        left_margin = right_margin = defaults.fire_glass_lr_margin
+
+        # Create panels for right leaf (inner_offset_x) and left leaf (inner_offset_x - shift_left)
+        for leaf_offset in (inner_offset_x, inner_offset_x - shift_left):
+            leaf_width_local = leaf_width
+            glass_left_abs = leaf_offset + left_margin
+            glass_right_abs = leaf_offset + leaf_width_local - right_margin
+
+            # bottom panel per leaf
+            bottom1_abs = inner_offset_y + defaults.fire_glass_bottom_margin
+            top1_abs = inner_offset_y + (inner_height / 2.0 - 50.0)
+            p1 = _make_panel_double(glass_left_abs, bottom1_abs, glass_right_abs - glass_left_abs, top1_abs - bottom1_abs)
+
+            # top panel per leaf
+            bottom2_abs = inner_offset_y + (inner_height / 2.0 + 50.0)
+            top2_abs = inner_offset_y + inner_height - defaults.fire_glass_top_margin
+            p2 = _make_panel_double(glass_left_abs, bottom2_abs, glass_right_abs - glass_left_abs, top2_abs - bottom2_abs)
+
+            # fallback to centered small box if panel doesn't fit
+            if p1 is None:
+                p1 = create_rounded_box(leaf_offset + (leaf_width_local - defaults.box_width) / 2.0,
+                                        inner_offset_y + (inner_height - defaults.box_height) / 2.0,
+                                        defaults.box_width, defaults.box_height,
+                                        min(defaults.box_height / 2.0, defaults.box_width / 2.0))
+            if p2 is None:
+                p2 = create_rounded_box(leaf_offset + (leaf_width_local - defaults.box_width) / 2.0,
+                                        inner_offset_y + (inner_height - defaults.box_height) / 2.0,
+                                        defaults.box_width, defaults.box_height,
+                                        min(defaults.box_height / 2.0, defaults.box_width / 2.0))
+
+            glass_cutouts_to_add.append(dedupe_consecutive_points(p1))
+            glass_cutouts_to_add.append(dedupe_consecutive_points(p2))
+
+    # If this is a double fire door and Option1/Option4 was selected, generate the
+    # single-panel glass (same behavior as single fire) spanning the full inner_width.
+    elif is_double and _eq_str(door_info.type, "fire") and opt_normalized in ("Option1", "Option4"):
+        # Use the same margins as Option1/Option4 above
+        left_margin = right_margin = defaults.fire_glass_lr_margin
+        if opt_normalized == "Option4":
+            top_margin = getattr(defaults, "fire_glass_top_margin_double", defaults.fire_glass_top_margin)
+        else:
+            top_margin = defaults.fire_glass_top_margin
+        bottom_margin = defaults.fire_glass_bottom_margin
 
         # Compute glass rectangle in inner-local coordinates (0..inner_width, 0..inner_height)
         glass_left_local = left_margin
@@ -263,21 +453,21 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
             glass_w = glass_right_local - glass_left_local
             glass_h = glass_top_local - glass_bottom_local
 
-        # convert local coords to absolute (inner) coords by adding inner offsets
-        glass_left = inner_offset_x + glass_left_local
-        glass_right = inner_offset_x + glass_right_local
+        # For double doors the left-most inner origin is shifted left by `shift_left`.
+        # Use that as the base so the single glass spans both leaves correctly.
+        base_inner_x = inner_offset_x - shift_left
+        # convert local coords to absolute (inner) coords by adding the left-leaf inner offset
+        glass_left = base_inner_x + glass_left_local
+        glass_right = base_inner_x + glass_right_local
         glass_bottom = inner_offset_y + glass_bottom_local
         glass_top = inner_offset_y + glass_top_local
 
         # Shift glass up by the bend adjustment so the visible glass is moved above the bend
-        # (this raises both bottom and top by bend_adjust, typically 12)
         glass_bottom += bend_adjust
         glass_top += bend_adjust
 
-        # pick a small corner radius from defaults (rounded rectangle) and create rounded rect
         radius = min(defaults.glass_corner_radius, glass_w / 2.0 if glass_w else 0.0, glass_h / 2.0 if glass_h else 0.0)
         pts_box = create_rounded_rect(glass_left, glass_bottom, glass_w, glass_h, radius, segments=defaults.glass_segments)
-        # remove consecutive duplicates for a cleaner polygon
         pts_box = dedupe_consecutive_points(pts_box)
 
     else:
@@ -287,13 +477,15 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
                 # previously handled above; but if not matched, fallback
                 pts_box = handle_pts
             else:
-                if opt_normalized == "Option1":
+                # For non-fire single doors, Option4 behaves like Option1
+                if opt_normalized in ("Option1", "Option4"):
                     pts_box = create_rounded_box(handle_left_x, handle_bottom_y, handle_width, handle_height, rounded_radius)
                 else:
                     pts_box = handle_pts
         elif _eq_str(door_info.category, "double"):
             if _eq_str(door_info.type, "fire"):
-                if opt_normalized == "Option1":
+                # For double fire doors, Option4 behaves like Option1; Option5 handled above (glass_cutouts_to_add)
+                if opt_normalized in ("Option1", "Option4"):
                     mid_x = inner_offset_x + inner_width / 2.0
                     gap = 6.0
                     left_box = create_rounded_box(mid_x - gap - handle_width, handle_bottom_y, handle_width, handle_height, rounded_radius)
@@ -311,7 +503,10 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
     # Transform calculated glass/handle points
     if pts_box is None:
         pts_box = handle_pts
-    glass_trans = [transform_point(p) for p in pts_box]
+    if add_standard_glass_cutout:
+        glass_trans = [transform_point(p) for p in pts_box]
+    else:
+        glass_trans = []
 
     # Add keybox (fire doors only) - centered at bottom, offset above inner bottom by default
     keybox_cutout = None
@@ -342,8 +537,19 @@ def compute_door_geometry(request: DoorDXFRequest, rotated: bool = False, offset
 
     # Always add the center handle cutout from the handle default geometry (right leaf / single door)
     cutouts.append(Cutout(name="center_handle", layer="CUT", points=handle_trans))
-    # Add the glass cutout separately (may be same as handle when using defaults)
-    cutouts.append(Cutout(name="glass_cut", layer="CUT", points=glass_trans))
+    # Add the glass cutouts: either the standard single polygon, or multiple separate panels for Option5
+    if add_standard_glass_cutout:
+        cutouts.append(Cutout(name="glass_cut", layer="CUT", points=glass_trans))
+    else:
+        # names depend on single/double
+        if not is_double:
+            names = ["glass_bottom", "glass_top"]
+        else:
+            names = ["glass_bottom_right", "glass_top_right", "glass_bottom_left", "glass_top_left"]
+        for i, poly in enumerate(glass_cutouts_to_add):
+            name = names[i] if i < len(names) else f"glass_panel_{i+1}"
+            trans = [transform_point(p) for p in poly]
+            cutouts.append(Cutout(name=name, layer="CUT", points=trans))
     # Append keybox if created
     if keybox_cutout is not None:
         cutouts.append(keybox_cutout)

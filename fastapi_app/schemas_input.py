@@ -35,6 +35,7 @@ class DefaultInfo(BaseModel):
     # Fire door glass margins (defaults)
     fire_glass_lr_margin: float = 190.0
     fire_glass_top_margin: float = 170.0
+    fire_glass_top_margin_double: float = 150.0
     fire_glass_bottom_margin: float = 240.0
     double_door_gap: float = 3.0
 

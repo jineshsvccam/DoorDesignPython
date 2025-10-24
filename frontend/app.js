@@ -59,12 +59,28 @@ function switchMode(mode) {
     singleInputsDiv.classList.add("hidden");
     excelInput.required = true;
     toggleHint.textContent = "Upload Excel file";
+    // mark body for bulk-mode so CSS can hide preview controls robustly
+    document.body.classList.add("bulk-mode");
   } else {
     singleInputsDiv.classList.remove("hidden");
     singleInputsDiv.classList.add("fade-in");
     bulkInputsDiv.classList.add("hidden");
     excelInput.required = false;
     toggleHint.textContent = "Enter parameters below";
+    document.body.classList.remove("bulk-mode");
+  }
+
+  // Hide preview controls in bulk mode, show them in single mode.
+  // Use getElementById here to avoid referencing variables that may be declared later.
+  const previewBtnEl = document.getElementById("previewBtn");
+  const previewContainerEl = document.getElementById("previewContainer");
+  if (mode === "bulk") {
+    // hide both the Preview button and the preview container in bulk mode
+    if (previewBtnEl) previewBtnEl.classList.add("hidden");
+    if (previewContainerEl) previewContainerEl.classList.add("hidden");
+  } else {
+    if (previewBtnEl) previewBtnEl.classList.remove("hidden");
+    if (previewContainerEl) previewContainerEl.classList.remove("hidden");
   }
 }
 
@@ -176,6 +192,21 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   // Populate fire options according to initial door type
   populateFireOptions(doorType ? doorType.value : "single");
+  // Ensure preview controls visibility matches initial mode (in case toggle state
+  // is set server-side or by persisted UI). Hide preview if bulk is active.
+  const _previewBtn = document.getElementById("previewBtn");
+  const _previewContainer = document.getElementById("previewContainer");
+  const activeToggle = document.querySelector(".toggle-option.active");
+  const initialMode = activeToggle ? activeToggle.dataset.value : currentMode;
+  if (initialMode === "bulk") {
+    if (_previewBtn) _previewBtn.classList.add("hidden");
+    if (_previewContainer) _previewContainer.classList.add("hidden");
+    document.body.classList.add("bulk-mode");
+  } else {
+    if (_previewBtn) _previewBtn.classList.remove("hidden");
+    if (_previewContainer) _previewContainer.classList.remove("hidden");
+    document.body.classList.remove("bulk-mode");
+  }
 });
 
 toggleSwitch.addEventListener("touchstart", (e) => {

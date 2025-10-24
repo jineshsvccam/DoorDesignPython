@@ -66,6 +66,7 @@ class Geometry(BaseModel):
 class SchemasOutput(BaseModel):
     door_category: Literal["Single", "Double"]
     door_type: Literal["Normal", "Fire"]
-    option: Optional[Literal["Option1", "Option2", "Option3"]] = None
+    # Allow Option4 and Option5 as requested by UI tokens (standard_double -> Option4, fourglass -> Option5)
+    option: Optional[Literal["Option1", "Option2", "Option3", "Option4", "Option5"]] = None
     metadata: Metadata
     geometry: Geometry

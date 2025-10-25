@@ -16,10 +16,16 @@ def prepare_dimensions(request: DoorDXFRequest):
     frame_total_width = width_measurement + dims.left_side_allowance_width + dims.right_side_allowance_width
     frame_total_height = height_measurement + dims.top_side_allowance_height + dims.bottom_side_allowance_height
 
-    inner_width = frame_total_width - defaults.door_minus_measurement_width
+    # Door-minus values come from defaults (could alternatively be provided in dimensions)
+    # For double doors include the configured gap between leaves when computing inner width
+    door_minus_measurement_width = defaults.door_minus_measurement_width
+    is_double = (door.category or "").strip().lower() == "double"
+    if is_double:
+        door_minus_measurement_width += defaults.double_door_gap
+
+    inner_width = frame_total_width - door_minus_measurement_width
     inner_height = frame_total_height - defaults.door_minus_measurement_height
 
-    is_double = (door.category or "").strip().lower() == "double"
     double_gap = defaults.double_door_gap if is_double else 0.0
 
     if is_double:

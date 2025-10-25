@@ -15,7 +15,7 @@ from fastapi_app.schemas_input import DoorDXFRequest
 from geometry.door_geometry import compute_door_geometry
 
 # Edit this to choose which testcase to run
-FILE_TO_RUN = "SingleFireBottom.json"
+FILE_TO_RUN = "DoubleStandard.json"
 
 
 def main() -> int:

@@ -26,11 +26,17 @@ def compute_door_geometry(request: DoorDXFRequest, rotated=False, offset=(0.0, 0
 
     transformed, (tx, ty) = apply_transform(all_sets, rotated, offset, frames["outer_height"])
 
-    # Frame objects (simplified mapping for now)
+    # Frame objects (include left frames for double doors)
     frame_objs = []
     for pts, name in zip([frames["outer"], frames["inner"]], ["outer", "inner"]):
         w, h = compute_frame_dimensions(pts)
         frame_objs.append(Frame(name=name, layer="CUT", points=pts, width=w, height=h))
+
+    # If double door, also expose left-side frames so both leaves are present in the output
+    if "left_outer" in frames and "left_inner" in frames:
+        for pts, name in zip([frames["left_outer"], frames["left_inner"]], ["left_outer", "left_inner"]):
+            w, h = compute_frame_dimensions(pts)
+            frame_objs.append(Frame(name=name, layer="CUT", points=pts, width=w, height=h))
 
     cutouts = generate_cutouts(params, frames, handles)
     holes = generate_holes(params, frames)
@@ -38,10 +44,17 @@ def compute_door_geometry(request: DoorDXFRequest, rotated=False, offset=(0.0, 0
 
     geometry = Geometry(frames=frame_objs, cutouts=cutouts, holes=holes, annotations=[], labels=labels)
 
+    # Compute overall width/height from the available frame polygons so metadata reflects
+    # single- or double-door bounding box correctly.
+    all_frame_points = list(frames.get("outer", []))
+    if "left_outer" in frames:
+        all_frame_points += list(frames.get("left_outer", []))
+    overall_w, overall_h = compute_frame_dimensions(all_frame_points) if all_frame_points else (0.0, frames.get("outer_height", 0.0))
+
     metadata = Metadata(
         label=request.metadata.label,
         file_name=request.metadata.file_name,
-        width=frames["inner_offset"][0] + params["leaf_width"],
+        width=overall_w,
         height=frames["outer_height"],
         rotated=rotated,
         is_annotation_required=True,

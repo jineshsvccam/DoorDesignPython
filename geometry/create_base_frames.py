@@ -67,12 +67,18 @@ def create_base_frames(params) -> Dict[str, Any]:
         left_inner_pts = [(x - shift_left, y) for (x, y) in left_inner_local]
 
     # Store only the shifted (placed) left polygons and metadata in the
-    # returned `frames` dict. The local (0,0)-anchored lists remain as
-    # local variables inside this function for debugging, but are not
-    # exposed by default to keep the API minimal.
-    frames["left_outer"] = left_outer_pts
-    frames["left_inner"] = left_inner_pts
-    frames["shift_left"] = shift_left
-    frames["inner_offset_left"] = (inner_offset_x_left, inner_offset_y)
+    # returned `frames` dict when this is a double-door configuration.
+    # For single doors we don't expose left-specific polygons; set the
+    # keys to None so callers can always expect these keys to exist.
+    if is_double:
+        frames["left_outer"] = left_outer_pts
+        frames["left_inner"] = left_inner_pts
+        frames["shift_left"] = shift_left
+        frames["inner_offset_left"] = (inner_offset_x_left, inner_offset_y)
+    else:
+        frames["left_outer"] = None
+        frames["left_inner"] = None
+        frames["shift_left"] = None
+        frames["inner_offset_left"] = None
 
     return frames

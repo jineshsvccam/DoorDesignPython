@@ -17,26 +17,54 @@ def compute_door_geometry(request: DoorDXFRequest, rotated=False, offset=(0.0, 0
     frames = create_base_frames(params)
     handles = create_handles(params, frames)
 
-    # Combine all point sets to compute translation
-    all_sets = [frames["outer"], frames["inner"], handles["right_handle"]]
-    if handles["left_handle"]:
-        all_sets.append(handles["left_handle"])
-    if "left_outer" in frames:
-        all_sets += [frames["left_outer"], frames["left_inner"]]
+    # Combine all point sets to compute translation. Filter out None or empty sets
+    all_sets = []
+    # required frames (outer/inner) — guard if missing
+    for key in ("outer", "inner"):
+        pts = frames.get(key)
+        if pts:
+            all_sets.append(pts)
 
-    transformed, (tx, ty) = apply_transform(all_sets, rotated, offset, frames["outer_height"])
+    # handles may be None or empty lists
+    rh = handles.get("right_handle") if isinstance(handles, dict) else None
+    if rh:
+        all_sets.append(rh)
+
+    lh = handles.get("left_handle") if isinstance(handles, dict) else None
+    if lh:
+        all_sets.append(lh)
+
+    # optional left-side frames for double doors
+    if "left_outer" in frames and frames.get("left_outer"):
+        all_sets.append(frames.get("left_outer"))
+    if "left_inner" in frames and frames.get("left_inner"):
+        all_sets.append(frames.get("left_inner"))
+
+    # If for some reason no point sets are available, avoid calling apply_transform
+    if not all_sets:
+        transformed = []
+        tx, ty = 0.0, 0.0
+    else:
+        transformed, (tx, ty) = apply_transform(all_sets, rotated, offset, frames["outer_height"])
 
     # Frame objects (include left frames for double doors)
     frame_objs = []
-    for pts, name in zip([frames["outer"], frames["inner"]], ["outer", "inner"]):
+    for key in ("outer", "inner"):
+        pts = frames.get(key)
+        if not pts:
+            # skip missing or None frames
+            continue
         w, h = compute_frame_dimensions(pts)
-        frame_objs.append(Frame(name=name, layer="CUT", points=pts, width=w, height=h))
+        frame_objs.append(Frame(name=key, layer="CUT", points=pts, width=w, height=h))
 
     # If double door, also expose left-side frames so both leaves are present in the output
-    if "left_outer" in frames and "left_inner" in frames:
-        for pts, name in zip([frames["left_outer"], frames["left_inner"]], ["left_outer", "left_inner"]):
+    if "left_outer" in frames or "left_inner" in frames:
+        for key in ("left_outer", "left_inner"):
+            pts = frames.get(key)
+            if not pts:
+                continue
             w, h = compute_frame_dimensions(pts)
-            frame_objs.append(Frame(name=name, layer="CUT", points=pts, width=w, height=h))
+            frame_objs.append(Frame(name=key, layer="CUT", points=pts, width=w, height=h))
 
     cutouts = generate_cutouts(params, frames, handles)
     holes = generate_holes(params, frames)
@@ -46,9 +74,11 @@ def compute_door_geometry(request: DoorDXFRequest, rotated=False, offset=(0.0, 0
 
     # Compute overall width/height from the available frame polygons so metadata reflects
     # single- or double-door bounding box correctly.
-    all_frame_points = list(frames.get("outer", []))
+    outer_pts = frames.get("outer") or []
+    all_frame_points = list(outer_pts)
     if "left_outer" in frames:
-        all_frame_points += list(frames.get("left_outer", []))
+        left_outer_pts = frames.get("left_outer") or []
+        all_frame_points += list(left_outer_pts)
     overall_w, overall_h = compute_frame_dimensions(all_frame_points) if all_frame_points else (0.0, frames.get("outer_height", 0.0))
 
     metadata = Metadata(

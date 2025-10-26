@@ -197,7 +197,10 @@ def generate_cutouts(params, frames, handles):
             glass_cutouts_to_add.append(dedupe_consecutive_points(p1))
             glass_cutouts_to_add.append(dedupe_consecutive_points(p2))
 
-    # Double fire + Option1/4 single-panel spanning both leaves
+    # Double fire + Option1/4: currently Option4 (standard double) should create
+    # one glass panel per leaf (not a single spanning panel). Create two
+    # per-leaf panels using the same margins/top/bottom logic as single-leaf
+    # Option5 handling.
     elif is_double and _eq_str(door_info.type, "fire") and opt_normalized in ("Option1", "Option4"):
         left_margin = right_margin = defaults.fire_glass_lr_margin
         if opt_normalized == "Option4":
@@ -206,34 +209,37 @@ def generate_cutouts(params, frames, handles):
             top_margin = defaults.fire_glass_top_margin
         bottom_margin = defaults.fire_glass_bottom_margin
 
-        glass_left_local = left_margin
-        glass_right_local = inner_width - right_margin
-        glass_bottom_local = bottom_margin
-        glass_top_local = inner_height - top_margin
+        # We'll add per-leaf panels into glass_cutouts_to_add and prevent the
+        # single pts_box from being used.
+        add_standard_glass_cutout = False
 
-        if glass_right_local <= glass_left_local or glass_top_local <= glass_bottom_local:
-            glass_w = defaults.box_width
-            glass_h = defaults.box_height
-            glass_left_local = (inner_width - glass_w) / 2.0
-            glass_bottom_local = (inner_height - glass_h) / 2.0
-            glass_right_local = glass_left_local + glass_w
-            glass_top_local = glass_bottom_local + glass_h
-        else:
-            glass_w = glass_right_local - glass_left_local
-            glass_h = glass_top_local - glass_bottom_local
+        def _make_panel_per_leaf(left_abs, bottom_abs, width_local, height_local):
+            if width_local <= 0 or height_local <= 0:
+                return None
+            radius_p = min(getattr(defaults, "glass_corner_radius", rounded_radius), width_local / 2.0 if width_local else 0.0, height_local / 2.0 if height_local else 0.0)
+            return create_rounded_rect(left_abs, bottom_abs, width_local, height_local, radius_p, segments=getattr(defaults, "glass_segments", 8))
 
-        base_inner_x = inner_offset_x - shift_left
-        glass_left = base_inner_x + glass_left_local
-        glass_bottom = inner_offset_y + glass_bottom_local
-        glass_right = base_inner_x + glass_right_local
-        glass_top = inner_offset_y + glass_top_local
+        # Per-leaf offsets: right leaf uses inner_offset_x, left leaf uses inner_offset_x - shift_left
+        for leaf_offset in (inner_offset_x, inner_offset_x - shift_left):
+            leaf_width_local = leaf_width
+            glass_left_abs = leaf_offset + left_margin
+            glass_right_abs = leaf_offset + leaf_width_local - right_margin
 
-        glass_bottom += bend_adjust
-        glass_top += bend_adjust
+            glass_bottom_abs = inner_offset_y + bottom_margin
+            glass_top_abs = inner_offset_y + inner_height - top_margin
 
-        radius = min(getattr(defaults, "glass_corner_radius", rounded_radius), glass_w / 2.0 if glass_w else 0.0, glass_h / 2.0 if glass_h else 0.0)
-        pts_box = create_rounded_rect(glass_left, glass_bottom, glass_w, glass_h, radius, segments=getattr(defaults, "glass_segments", 8))
-        pts_box = dedupe_consecutive_points(pts_box)
+            # Validate and fall back to box if invalid
+            width_local = glass_right_abs - glass_left_abs
+            height_local = glass_top_abs - glass_bottom_abs
+
+            p = _make_panel_per_leaf(glass_left_abs, glass_bottom_abs, width_local, height_local)
+            if p is None:
+                p = create_rounded_box(leaf_offset + (leaf_width_local - defaults.box_width) / 2.0,
+                                       inner_offset_y + (inner_height - defaults.box_height) / 2.0,
+                                       defaults.box_width, defaults.box_height,
+                                       min(defaults.box_height / 2.0, defaults.box_width / 2.0))
+
+            glass_cutouts_to_add.append(dedupe_consecutive_points(p))
 
     else:
         # Fallback behavior: use the right-handle box as the glass/handle box
@@ -257,17 +263,29 @@ def generate_cutouts(params, frames, handles):
             cutouts.append(Cutout(name=name, layer="CUT", points=poly))
 
 
-
-
     # --- Optional keybox for fire doors ---
     if (door.type or "").strip().lower() == "fire":
         kb_w = defaults.keybox_width
         kb_h = defaults.keybox_height
         kb_offset = defaults.keybox_bottom_offset
         kb_center_x_local = params["inner_width"] / 2.0
-        kb_left_local = kb_center_x_local - kb_w / 2.0
         kb_bottom_local = kb_offset + params["bend_adjust"]
-        kb_left = inner_offset_x + kb_left_local
+
+        # Keybox should be positioned in the right leaf bottom-centre — the
+        # same behavior as single doors. For single doors this is simply the
+        # inner area centre; for double doors we centre inside the right
+        # leaf (whose left X origin is `inner_offset_x` and width is
+        # `params['leaf_width']`). This ensures the keybox appears in the
+        # right panel bottom centre rather than between leaves or across both.
+        if params.get("is_double"):
+            leaf_w = params.get("leaf_width", params.get("inner_width", 0.0))
+            kb_center_x_local = leaf_w / 2.0
+            kb_left = inner_offset_x + kb_center_x_local - kb_w / 2.0
+        else:
+            kb_center_x_local = params["inner_width"] / 2.0
+            kb_left_local = kb_center_x_local - kb_w / 2.0
+            kb_left = inner_offset_x + kb_left_local
+
         kb_bottom = inner_offset_y + kb_bottom_local
 
         kb_pts = [

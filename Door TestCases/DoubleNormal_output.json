@@ -1,0 +1,241 @@
+{
+  "door_category": "Double",
+  "door_type": "Normal",
+  "option": null,
+  "metadata": {
+    "label": "Single_door",
+    "file_name": "Single_door.dxf",
+    "width": 1296.0,
+    "height": 1594.0,
+    "rotated": false,
+    "is_annotation_required": true,
+    "offset": [
+      655.5,
+      12.0
+    ]
+  },
+  "geometry": {
+    "frames": [
+      {
+        "name": "outer",
+        "layer": "CUT",
+        "points": [
+          [
+            0.0,
+            0.0
+          ],
+          [
+            640.5,
+            0.0
+          ],
+          [
+            640.5,
+            1570.0
+          ],
+          [
+            0.0,
+            1570.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        "width": 640.5,
+        "height": 1570.0
+      },
+      {
+        "name": "inner",
+        "layer": "CUT",
+        "points": [
+          [
+            19.0,
+            -12.0
+          ],
+          [
+            628.5,
+            -12.0
+          ],
+          [
+            628.5,
+            1582.0
+          ],
+          [
+            19.0,
+            1582.0
+          ],
+          [
+            19.0,
+            -12.0
+          ]
+        ],
+        "width": 609.5,
+        "height": 1594.0
+      },
+      {
+        "name": "left_outer",
+        "layer": "CUT",
+        "points": [
+          [
+            -655.5,
+            0.0
+          ],
+          [
+            -3.0,
+            0.0
+          ],
+          [
+            -3.0,
+            1570.0
+          ],
+          [
+            -655.5,
+            1570.0
+          ],
+          [
+            -655.5,
+            0.0
+          ]
+        ],
+        "width": 652.5,
+        "height": 1570.0
+      },
+      {
+        "name": "left_inner",
+        "layer": "CUT",
+        "points": [
+          [
+            -643.5,
+            -12.0
+          ],
+          [
+            -34.0,
+            -12.0
+          ],
+          [
+            -34.0,
+            1582.0
+          ],
+          [
+            -643.5,
+            1582.0
+          ],
+          [
+            -643.5,
+            -12.0
+          ]
+        ],
+        "width": 609.5,
+        "height": 1594.0
+      }
+    ],
+    "cutouts": [
+      {
+        "name": "left_handle",
+        "layer": "CUT",
+        "points": [
+          [
+            -79.0,
+            729.0
+          ],
+          [
+            -57.0,
+            729.0
+          ],
+          [
+            -57.0,
+            841.0
+          ],
+          [
+            -79.0,
+            841.0
+          ],
+          [
+            -79.0,
+            729.0
+          ]
+        ]
+      },
+      {
+        "name": "center_handle",
+        "layer": "CUT",
+        "points": [
+          [
+            49.0,
+            729.0
+          ],
+          [
+            71.0,
+            729.0
+          ],
+          [
+            71.0,
+            841.0
+          ],
+          [
+            49.0,
+            841.0
+          ],
+          [
+            49.0,
+            729.0
+          ]
+        ]
+      },
+      {
+        "name": "glass_cut",
+        "layer": "CUT",
+        "points": [
+          [
+            49.0,
+            729.0
+          ],
+          [
+            71.0,
+            729.0
+          ],
+          [
+            71.0,
+            841.0
+          ],
+          [
+            49.0,
+            841.0
+          ],
+          [
+            49.0,
+            729.0
+          ]
+        ]
+      }
+    ],
+    "holes": [
+      {
+        "name": "hole_top",
+        "layer": "CUT",
+        "center": [
+          59.0,
+          1420.0
+        ],
+        "radius": 5.0
+      },
+      {
+        "name": "hole_bottom",
+        "layer": "CUT",
+        "center": [
+          59.0,
+          150.0
+        ],
+        "radius": 5.0
+      }
+    ],
+    "annotations": [],
+    "labels": [
+      {
+        "type": "center_label",
+        "text": "Single_door",
+        "position": "center"
+      }
+    ]
+  }
+}

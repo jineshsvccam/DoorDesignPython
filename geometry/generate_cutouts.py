@@ -79,6 +79,10 @@ def generate_cutouts(params, frames, handles):
                 radius_p = min(getattr(defaults, "glass_corner_radius", rounded_radius), width_local / 2.0 if width_local else 0.0, height_local / 2.0 if height_local else 0.0)
                 return create_rounded_rect(left_abs, bottom_abs, width_local, height_local, radius_p, segments=getattr(defaults, "glass_segments", 8))
 
+            # choose top margin: double-door four-panel layout should prefer the
+            # double-door top margin when available
+            _opt5_top_margin = getattr(defaults, "fire_glass_top_margin_double", defaults.fire_glass_top_margin) if is_double else defaults.fire_glass_top_margin
+
             if not is_double:
                 glass_left_abs = inner_offset_x + left_margin
                 glass_right_abs = inner_offset_x + inner_width - right_margin
@@ -88,7 +92,7 @@ def generate_cutouts(params, frames, handles):
                 panel1 = _make_panel(glass_left_abs, bottom1_abs, glass_right_abs - glass_left_abs, top1_abs - bottom1_abs)
 
                 bottom2_abs = inner_offset_y + (inner_height / 2.0 + 50.0)
-                top2_abs = inner_offset_y + inner_height - defaults.fire_glass_top_margin
+                top2_abs = inner_offset_y + inner_height - _opt5_top_margin
                 panel2 = _make_panel(glass_left_abs, bottom2_abs, glass_right_abs - glass_left_abs, top2_abs - bottom2_abs)
 
                 if panel1 is None:
@@ -119,7 +123,7 @@ def generate_cutouts(params, frames, handles):
                     p1 = _make_panel(glass_left_abs, bottom1_abs, glass_right_abs - glass_left_abs, top1_abs - bottom1_abs)
 
                     bottom2_abs = inner_offset_y + (inner_height / 2.0 + 50.0)
-                    top2_abs = inner_offset_y + inner_height - defaults.fire_glass_top_margin + bend_adjust
+                    top2_abs = inner_offset_y + inner_height - _opt5_top_margin + bend_adjust
                     p2 = _make_panel(glass_left_abs, bottom2_abs, glass_right_abs - glass_left_abs, top2_abs - bottom2_abs)
 
                     if p1 is None:
@@ -194,7 +198,7 @@ def generate_cutouts(params, frames, handles):
             else:
                 # fallback to inner-based top if outer not available
                 outer_frame_top = inner_offset_y + inner_height
-            top2_abs = outer_frame_top - defaults.fire_glass_top_margin
+            top2_abs = outer_frame_top - getattr(defaults, "fire_glass_top_margin_double", defaults.fire_glass_top_margin)
             p2 = _make_panel_double(glass_left_abs, bottom2_abs, glass_right_abs - glass_left_abs, top2_abs - bottom2_abs)
 
             if p1 is None:

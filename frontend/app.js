@@ -844,9 +844,17 @@ async function drawGeometryToFabric(responseOrGeometry) {
   }
   const canvas = window.fabricCanvas;
 
-  // Normalize canvas element size - adopt element natural sizes
-  const canvasWidth = canvasEl.width || 1000;
-  const canvasHeight = canvasEl.height || 700;
+  // Normalize canvas size using the Fabric canvas's dimensions. Using the
+  // Fabric instance avoids mismatches when the element is CSS-scaled or when
+  // Fabric has adjusted its internal size. Fall back to element natural size.
+  const canvasWidth =
+    (canvas && typeof canvas.getWidth === "function" && canvas.getWidth()) ||
+    canvasEl.width ||
+    1000;
+  const canvasHeight =
+    (canvas && typeof canvas.getHeight === "function" && canvas.getHeight()) ||
+    canvasEl.height ||
+    700;
 
   // collect all points to compute bounds
   const points = [];
@@ -965,7 +973,9 @@ async function drawGeometryToFabric(responseOrGeometry) {
         top: canvasHeight / 2 - 10,
         originX: "center",
         originY: "center",
-        fontSize: Math.max(12, Math.round(14 * (scale / 4 + 0.5))),
+        // Choose a font size that scales with our computed drawing scale but
+        // keep a sensible minimum for small screens so annotations remain legible.
+        fontSize: Math.max(10, Math.round(14 * (scale / 4 + 0.5))),
         fill: "#222",
         selectable: false,
         evented: false,
@@ -1086,7 +1096,13 @@ async function drawGeometryToFabric(responseOrGeometry) {
       maxXF = Math.max(...xsF);
     const minYF = Math.min(...ysF),
       maxYF = Math.max(...ysF);
-    const dimOffset = 40;
+    // compute a dynamic offset for dimension lines so labels remain inside
+    // the canvas on small screens; clamp to reasonable min/max values.
+    const defaultDim = 40;
+    const dimOffset = Math.min(
+      defaultDim,
+      Math.max(12, Math.round(canvasWidth * 0.06))
+    );
     // bottom dimension (width)
     const bx1 = toCanvasX(minXF);
     const by = toCanvasY(maxYF) + dimOffset;
@@ -1109,18 +1125,28 @@ async function drawGeometryToFabric(responseOrGeometry) {
       maxX2 = Math.max(...xs2);
     const minY2 = Math.min(...ys2),
       maxY2 = Math.max(...ys2);
-    const dimOffset = 40;
+    // dynamic dim offset for second frame as well
+    const defaultDim2 = 40;
+    const dimOffset = Math.min(
+      defaultDim2,
+      Math.max(12, Math.round(canvasWidth * 0.06))
+    );
     // top dimension (width) - above the box
     const tx1 = toCanvasX(minX2);
-    const ty = toCanvasY(minY2) - dimOffset;
+    let ty = toCanvasY(minY2) - dimOffset;
     const tx2 = toCanvasX(maxX2);
     const widthVal = Math.round(maxX2 - minX2);
     drawDimLineFabric(tx1, ty, tx2, ty, `${widthVal} mm`, { tick: 6 });
     // left dimension (height)
-    const lx = toCanvasX(minX2) - dimOffset;
+    let lx = toCanvasX(minX2) - dimOffset;
     const ly1 = toCanvasY(minY2);
     const ly2 = toCanvasY(maxY2);
     const heightVal = Math.round(maxY2 - minY2);
+    // clamp vertical dimension lines to remain within canvas bounds
+    const edgePad = 6;
+    if (lx < edgePad) lx = edgePad;
+    if (ty < edgePad) ty = edgePad;
+    drawDimLineFabric(tx1, ty, tx2, ty, `${widthVal} mm`, { tick: 6 });
     drawDimLineFabric(lx, ly1, lx, ly2, `${heightVal} mm`, { tick: 6 });
   }
 

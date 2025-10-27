@@ -718,21 +718,28 @@ async function drawGeometryToFabric(responseOrGeometry) {
       // high-resolution internal buffer. Compute a display size that
       // preserves aspect ratio and does not overflow the wrapper.
       try {
+        // compute wrapper-constrained display size and apply mobile caps so the
+        // preview remains compact on small screens. Preserve aspect ratio.
+        const maxViewportW = Math.max(160, window.innerWidth - 40);
+        const maxViewportH = Math.max(160, window.innerHeight - 120);
         const wrapperW =
-          wrapper.clientWidth ||
-          Math.min(window.innerWidth - 40, canvasEl.width);
+          wrapper.clientWidth || Math.min(maxViewportW, canvasEl.width);
         const wrapperH =
-          wrapper.clientHeight ||
-          Math.min(window.innerHeight - 120, canvasEl.height);
-        const displayW = Math.min(canvasEl.width, wrapperW);
-        const displayH = Math.round(
+          wrapper.clientHeight || Math.min(maxViewportH, canvasEl.height);
+        let displayW = Math.min(canvasEl.width, wrapperW);
+        let displayH = Math.round(
           (canvasEl.height * displayW) / canvasEl.width
         );
+        // mobile: cap height to a fraction of viewport so it doesn't dominate screen
+        if (window.innerWidth <= 600) {
+          const mobileMaxH = Math.round(window.innerHeight * 0.6);
+          displayH = Math.min(displayH, mobileMaxH);
+          displayW = Math.min(displayW, window.innerWidth - 24);
+        }
         canvasEl.style.width = displayW + "px";
         canvasEl.style.height =
-          Math.max(100, Math.min(displayH, wrapperH)) + "px";
+          Math.max(80, Math.min(displayH, wrapperH)) + "px";
         canvasEl.style.maxWidth = "100%";
-        canvasEl.style.height = canvasEl.style.height; // ensure style applied
       } catch (e) {
         /* ignore display sizing errors */
       }
@@ -751,19 +758,24 @@ async function drawGeometryToFabric(responseOrGeometry) {
         document.getElementById("svgPreviewWrapper") ||
         document.getElementById("previewContainer");
       if (wrapper && canvasEl) {
+        const maxViewportW = Math.max(160, window.innerWidth - 40);
+        const maxViewportH = Math.max(160, window.innerHeight - 120);
         const wrapperW =
-          wrapper.clientWidth ||
-          Math.min(window.innerWidth - 40, canvasEl.width);
+          wrapper.clientWidth || Math.min(maxViewportW, canvasEl.width);
         const wrapperH =
-          wrapper.clientHeight ||
-          Math.min(window.innerHeight - 120, canvasEl.height);
-        const displayW = Math.min(canvasEl.width, wrapperW);
-        const displayH = Math.round(
+          wrapper.clientHeight || Math.min(maxViewportH, canvasEl.height);
+        let displayW = Math.min(canvasEl.width, wrapperW);
+        let displayH = Math.round(
           (canvasEl.height * displayW) / canvasEl.width
         );
+        if (window.innerWidth <= 600) {
+          const mobileMaxH = Math.round(window.innerHeight * 0.6);
+          displayH = Math.min(displayH, mobileMaxH);
+          displayW = Math.min(displayW, window.innerWidth - 24);
+        }
         canvasEl.style.width = displayW + "px";
         canvasEl.style.height =
-          Math.max(100, Math.min(displayH, wrapperH)) + "px";
+          Math.max(80, Math.min(displayH, wrapperH)) + "px";
         canvasEl.style.maxWidth = "100%";
       }
     } catch (e) {

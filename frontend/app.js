@@ -197,12 +197,12 @@ function populateFireOptions(doorTypeValue = "single") {
     // double: only two options
     const opts = [
       {
-        value: "standard",
+        value: "standarddouble",
         label: "Standard Fire Door (Top 150 / Bottom 240 / L-R 190)",
       },
       {
         value: "fourglass",
-        label: "Four glass with centre aligned from top and bottom",
+        label: "Four Glass with Centre Aligned from Top and Bottom",
       },
     ];
     opts.forEach((o) => {

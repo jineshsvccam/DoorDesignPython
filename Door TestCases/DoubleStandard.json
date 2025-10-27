@@ -3,7 +3,7 @@
   "door": {
     "category": "Double",
     "type": "fire",
-    "option": "standard",
+    "option": "standarddouble",
     "hole_offset": "80x40",
     "default_allowance": "no"
   },

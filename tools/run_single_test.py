@@ -14,8 +14,25 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from fastapi_app.schemas_input import DoorDXFRequest
 from geometry.door_geometry import compute_door_geometry
 
-# Edit this to choose which testcase to run
-FILE_TO_RUN = "SingleNormal.json"
+# Keep filenames in a simple array; run by index if you pass an integer CLI arg.
+FILES = [
+    "DoubleStandard.json",
+    "DoubleFourGlass.json",
+    "DoubleNormal.json",
+    "SingleFireBottom.json",
+    "SingleFireTop.json",
+    "SingleFireStandard.json",
+    "SingleNormal.json",
+]
+# Choose by editing the integer INDEX below (change this before running).
+# Example: set INDEX = 3 to use FILES[3]. This keeps selection simple so you
+# can edit one variable in the file instead of passing CLI args.
+INDEX = 0  # <-- change this integer to select a different file from FILES
+try:
+    FILE_TO_RUN = FILES[INDEX]
+except Exception:
+    print(f"Index {INDEX} out of range (0..{len(FILES)-1})", file=sys.stderr)
+    raise SystemExit(2)
 
 
 def main() -> int:

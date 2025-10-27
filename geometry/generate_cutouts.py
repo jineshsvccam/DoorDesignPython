@@ -22,6 +22,9 @@ def generate_cutouts(params, frames, handles):
     leaf_width = params.get("leaf_width", inner_width)
     shift_left = frames.get("shift_left", 0.0)
     bend_adjust = params.get("bend_adjust", 0.0)
+    # left leaf inner offset x (if present) - prefer left-specific inner offset
+    inner_offset_left = frames.get("inner_offset_left") or (inner_offset_x, inner_offset_y)
+    inner_offset_x_left = inner_offset_left[0]
 
     # Determine final cutout(s) based on door info options
     door_info = door
@@ -35,7 +38,7 @@ def generate_cutouts(params, frames, handles):
             opt_normalized = "Option2"
         elif lower in ("option3", "option 3", "3", "bottomfixed"):
             opt_normalized = "Option3"
-        elif lower in ("standard_double", "standard-double", "standard double"):
+        elif lower in ("standard_double", "standard-double", "standarddouble"):
             opt_normalized = "Option4"
         elif lower in ("fourglass", "four_glass", "four-glass", "4glass", "4_glass"):
             opt_normalized = "Option5"
@@ -102,17 +105,21 @@ def generate_cutouts(params, frames, handles):
                 glass_cutouts_to_add.append(dedupe_consecutive_points(panel1))
                 glass_cutouts_to_add.append(dedupe_consecutive_points(panel2))
             else:
-                for leaf_offset in (inner_offset_x, inner_offset_x - shift_left):
+                # per-leaf offsets: right leaf uses inner_offset_x, left leaf uses
+                # the left-specific inner offset (shifted into placed coords)
+                for leaf_offset in (inner_offset_x, inner_offset_x_left - shift_left):
                     leaf_width_local = leaf_width
                     glass_left_abs = leaf_offset + left_margin
                     glass_right_abs = leaf_offset + leaf_width_local - right_margin
 
-                    bottom1_abs = inner_offset_y + defaults.fire_glass_bottom_margin
+                    # include bend_adjust as single-panel path does so offsets
+                    # match the declared defaults when measured from visual coords
+                    bottom1_abs = inner_offset_y + defaults.fire_glass_bottom_margin + bend_adjust
                     top1_abs = inner_offset_y + (inner_height / 2.0 - 50.0)
                     p1 = _make_panel(glass_left_abs, bottom1_abs, glass_right_abs - glass_left_abs, top1_abs - bottom1_abs)
 
                     bottom2_abs = inner_offset_y + (inner_height / 2.0 + 50.0)
-                    top2_abs = inner_offset_y + inner_height - defaults.fire_glass_top_margin
+                    top2_abs = inner_offset_y + inner_height - defaults.fire_glass_top_margin + bend_adjust
                     p2 = _make_panel(glass_left_abs, bottom2_abs, glass_right_abs - glass_left_abs, top2_abs - bottom2_abs)
 
                     if p1 is None:
@@ -170,17 +177,24 @@ def generate_cutouts(params, frames, handles):
             return create_rounded_rect(left_abs, bottom_abs, width_local, height_local, radius_p, segments=getattr(defaults, "glass_segments", 8))
 
         left_margin = right_margin = defaults.fire_glass_lr_margin
-        for leaf_offset in (inner_offset_x, inner_offset_x - shift_left):
+        for leaf_offset in (inner_offset_x, inner_offset_x_left - shift_left):
             leaf_width_local = leaf_width
             glass_left_abs = leaf_offset + left_margin
             glass_right_abs = leaf_offset + leaf_width_local - right_margin
 
-            bottom1_abs = inner_offset_y + defaults.fire_glass_bottom_margin
-            top1_abs = inner_offset_y + (inner_height / 2.0 - 50.0)
+            bottom1_abs = inner_offset_y + defaults.fire_glass_bottom_margin + bend_adjust
+            top1_abs = inner_offset_y + (inner_height / 2.0 - 50.0) + bend_adjust
             p1 = _make_panel_double(glass_left_abs, bottom1_abs, glass_right_abs - glass_left_abs, top1_abs - bottom1_abs)
 
-            bottom2_abs = inner_offset_y + (inner_height / 2.0 + 50.0)
-            top2_abs = inner_offset_y + inner_height - defaults.fire_glass_top_margin
+            bottom2_abs = inner_offset_y + (inner_height / 2.0 + 50.0) + bend_adjust
+            # compute the placed outer-frame top for this leaf (use left_outer for left leaf)
+            outer_frame_pts = frames.get('outer') if leaf_offset == inner_offset_x else frames.get('left_outer')
+            if outer_frame_pts:
+                outer_frame_top = max(p[1] for p in outer_frame_pts)
+            else:
+                # fallback to inner-based top if outer not available
+                outer_frame_top = inner_offset_y + inner_height
+            top2_abs = outer_frame_top - defaults.fire_glass_top_margin
             p2 = _make_panel_double(glass_left_abs, bottom2_abs, glass_right_abs - glass_left_abs, top2_abs - bottom2_abs)
 
             if p1 is None:
@@ -220,13 +234,21 @@ def generate_cutouts(params, frames, handles):
             return create_rounded_rect(left_abs, bottom_abs, width_local, height_local, radius_p, segments=getattr(defaults, "glass_segments", 8))
 
         # Per-leaf offsets: right leaf uses inner_offset_x, left leaf uses inner_offset_x - shift_left
-        for leaf_offset in (inner_offset_x, inner_offset_x - shift_left):
+        for leaf_offset in (inner_offset_x, inner_offset_x_left - shift_left):
             leaf_width_local = leaf_width
             glass_left_abs = leaf_offset + left_margin
             glass_right_abs = leaf_offset + leaf_width_local - right_margin
 
-            glass_bottom_abs = inner_offset_y + bottom_margin
-            glass_top_abs = inner_offset_y + inner_height - top_margin
+            # apply bend_adjust the same way single-panel path does
+            glass_bottom_abs = inner_offset_y + bottom_margin + bend_adjust
+            # determine the placed outer-frame top for this leaf (right vs left)
+            outer_frame_pts = frames.get('outer') if leaf_offset == inner_offset_x else frames.get('left_outer')
+            if outer_frame_pts:
+                outer_frame_top = max(p[1] for p in outer_frame_pts)
+            else:
+                outer_frame_top = inner_offset_y + inner_height
+            # compute glass top such that outer_frame_top - glass_top_abs == top_margin
+            glass_top_abs = outer_frame_top - top_margin
 
             # Validate and fall back to box if invalid
             width_local = glass_right_abs - glass_left_abs

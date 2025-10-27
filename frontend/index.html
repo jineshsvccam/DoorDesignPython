@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DXF Generator</title>
     <link rel="stylesheet" href="/static/styles.css" />
+    <!-- ✅ Fabric.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
   </head>
+
   <body>
     <div class="container">
       <div class="page-header">
@@ -22,6 +25,7 @@
           </strong>
         </div>
       </div>
+
       <form id="dxfForm">
         <div class="toggle-container">
           <div class="toggle-switch" id="toggleSwitch">
@@ -30,6 +34,7 @@
             <div class="toggle-option" data-value="bulk">Bulk</div>
           </div>
         </div>
+
         <div class="toggle-hint">
           <span id="toggleHint">Enter parameters below</span>
         </div>
@@ -163,7 +168,6 @@
               </div>
             </div>
           </div>
-          <!-- end allowanceSection -->
         </div>
 
         <div id="bulkInputs" class="hidden">
@@ -181,30 +185,28 @@
             Preview
           </button>
         </div>
+
         <div id="previewContainer" class="mt">
           <h4>Preview Result</h4>
           <div class="preview-row">
             <pre id="previewBox" class="hidden preview-box"></pre>
+            <!-- ADDED id="svgPreviewWrapper" so app.js can find/replace SVG with canvas if needed -->
             <div id="svgPreviewWrapper" class="svg-preview-wrapper">
-              <svg
-                id="svgPreview"
-                viewBox="0 0 1000 1000"
-                preserveAspectRatio="xMidYMid meet"
-                class="svg-preview"
-              >
-                <!-- geometry will be drawn here -->
-              </svg>
-              <div class="svg-preview-note">SVG schematic preview (scaled)</div>
+              <canvas id="fabricCanvas" width="1000" height="800"></canvas>
+              <div class="svg-preview-note">
+                Fabric.js preview (zoom/pan: hold ALT)
+              </div>
             </div>
           </div>
         </div>
       </form>
     </div>
 
-    <script src="/static/app.js?v=2" defer></script>
+    <div class="copyright-badge">© 2025 Jinesh</div>
+    <footer class="site-footer">
+      Developed with ❤️ by <span class="author-highlight">Jinesh</span>
+    </footer>
+
+    <script src="/static/app.js?v=3" defer></script>
   </body>
-  <div class="copyright-badge">© 2025 Jinesh</div>
-  <footer class="site-footer">
-    Developed with ❤️ by <span class="author-highlight">Jinesh</span>
-  </footer>
 </html>

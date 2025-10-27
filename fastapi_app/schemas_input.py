@@ -21,7 +21,7 @@ class DefaultInfo(BaseModel):
     # Glass visual defaults
     glass_corner_radius: float = 20.0
     glass_segments: int = 8
-    circle_radius: float = 5.0
+    circle_radius: float = 10.0
     left_circle_offset: float = 40.0
     top_circle_offset: float = 150.0
     dim_text_height: float = 8.0

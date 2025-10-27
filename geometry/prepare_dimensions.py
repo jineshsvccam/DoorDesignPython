@@ -48,4 +48,25 @@ def prepare_dimensions(request: DoorDXFRequest):
         "bending_width_double_door": defaults.bending_width_double_door,
         "bend_adjust": defaults.bend_adjust,
     }
+    # Parse hole_offset from the door input if provided. Expected format: "<left>x<top>" (e.g. "80x40").
+    # If parsing succeeds, override the defaults on the DefaultInfo object so downstream
+    # code (e.g. generate_holes) can continue to read offsets from defaults.
+    hole_offset_raw = (door.hole_offset or "") if hasattr(door, "hole_offset") else ""
+    try:
+        if isinstance(hole_offset_raw, str) and hole_offset_raw.strip():
+            parts = hole_offset_raw.lower().replace(" ", "").split("x")
+            if len(parts) == 2:
+                left_val = float(parts[1])
+                top_val = float(parts[0])
+                # Mutate the defaults object with parsed values
+                try:
+                    defaults.left_circle_offset = left_val
+                    defaults.top_circle_offset = top_val
+                except Exception:
+                    # If defaults is not mutable for some reason, put them into params as fallback
+                    params["left_circle_offset"] = left_val
+                    params["top_circle_offset"] = top_val
+    except Exception:
+        # On any parse error, leave defaults unchanged (use configured defaults)
+        pass
     return params

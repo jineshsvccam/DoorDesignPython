@@ -831,18 +831,18 @@
         "layer": "CUT",
         "center": [
           59.0,
-          1445.0
+          1515.0
         ],
-        "radius": 5.0
+        "radius": 10.0
       },
       {
         "name": "hole_bottom",
         "layer": "CUT",
         "center": [
           59.0,
-          150.0
+          80.0
         ],
-        "radius": 5.0
+        "radius": 10.0
       }
     ],
     "annotations": [],

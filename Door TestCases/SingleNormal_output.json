@@ -135,7 +135,7 @@
           59.0,
           910.0
         ],
-        "radius": 5.0
+        "radius": 10.0
       },
       {
         "name": "hole_bottom",
@@ -144,7 +144,7 @@
           59.0,
           150.0
         ],
-        "radius": 5.0
+        "radius": 10.0
       }
     ],
     "annotations": [],

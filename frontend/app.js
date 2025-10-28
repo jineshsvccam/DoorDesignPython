@@ -81,6 +81,25 @@ function validateInputs() {
     markInvalid(heightIn);
   }
 
+  // Door type / Sub type validation (selects)
+  const doorTypeEl = document.getElementById("doorType");
+  const subTypeEl = document.getElementById("subType");
+  // clear prior outlines for selects
+  if (doorTypeEl) clearInvalid(doorTypeEl);
+  if (subTypeEl) clearInvalid(subTypeEl);
+
+  if (doorTypeEl && (!doorTypeEl.value || doorTypeEl.value.trim() === "")) {
+    msgs.push("Door type is required.");
+    firstEl = firstEl || doorTypeEl;
+    markInvalid(doorTypeEl);
+  }
+
+  if (subTypeEl && (!subTypeEl.value || subTypeEl.value.trim() === "")) {
+    msgs.push("Sub type is required.");
+    firstEl = firstEl || subTypeEl;
+    markInvalid(subTypeEl);
+  }
+
   // allowances: if allowance inputs visible (defaultAllowance === 'no') validate them
   const defaultAllow = defaultAllowance && defaultAllowance.value === "yes";
   if (!defaultAllow) {

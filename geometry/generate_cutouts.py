@@ -180,7 +180,12 @@ def generate_cutouts(params, frames, handles):
             radius_p = min(getattr(defaults, "glass_corner_radius", rounded_radius), width_local / 2.0 if width_local else 0.0, height_local / 2.0 if height_local else 0.0)
             return create_rounded_rect(left_abs, bottom_abs, width_local, height_local, radius_p, segments=getattr(defaults, "glass_segments", 8))
 
-        left_margin = right_margin = defaults.fire_glass_lr_margin
+        # If this is a double door and each leaf is narrower than the
+        # configured minimum, prefer the smaller left/right glass margin.
+        if is_double and leaf_width < getattr(defaults, "double_door_minimum_width", 1000.0):
+            left_margin = right_margin = getattr(defaults, "fire_glass_lr_margin_small", defaults.fire_glass_lr_margin)
+        else:
+            left_margin = right_margin = defaults.fire_glass_lr_margin
         for leaf_offset in (inner_offset_x, inner_offset_x_left - shift_left):
             leaf_width_local = leaf_width
             glass_left_abs = leaf_offset + left_margin
@@ -220,7 +225,11 @@ def generate_cutouts(params, frames, handles):
     # per-leaf panels using the same margins/top/bottom logic as single-leaf
     # Option5 handling.
     elif is_double and _eq_str(door_info.type, "fire") and opt_normalized in ("Option1", "Option4"):
-        left_margin = right_margin = defaults.fire_glass_lr_margin
+        # Use smaller LR margin for narrow leaves when configured
+        if is_double and leaf_width < getattr(defaults, "double_door_minimum_width", 1000.0):
+            left_margin = right_margin = getattr(defaults, "fire_glass_lr_margin_small", defaults.fire_glass_lr_margin)
+        else:
+            left_margin = right_margin = defaults.fire_glass_lr_margin
         if opt_normalized == "Option4":
             top_margin = getattr(defaults, "fire_glass_top_margin_double", defaults.fire_glass_top_margin)
         else:

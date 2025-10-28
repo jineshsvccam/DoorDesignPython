@@ -21,7 +21,7 @@ class DefaultInfo(BaseModel):
     # Glass visual defaults
     glass_corner_radius: float = 20.0
     glass_segments: int = 8
-    circle_radius: float = 10.0
+    circle_radius: float = 11.0
     left_circle_offset: float = 40.0
     top_circle_offset: float = 150.0
     dim_text_height: float = 8.0
@@ -34,10 +34,12 @@ class DefaultInfo(BaseModel):
     keybox_bottom_offset: float = 50.0
     # Fire door glass margins (defaults)
     fire_glass_lr_margin: float = 190.0
+    fire_glass_lr_margin_small: float =80.0
     fire_glass_top_margin: float = 170.0
     fire_glass_top_margin_double: float = 150.0
     fire_glass_bottom_margin: float = 240.0
     double_door_gap: float = 3.0
+    double_door_minimum_width: float = 500.0 # single piece width for double doors
 
 
 class DoorInfo(BaseModel):

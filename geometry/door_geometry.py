@@ -73,6 +73,25 @@ def compute_door_geometry(request: DoorDXFRequest, rotated=False, offset=(0.0, 0
                 if isinstance(handles, dict):
                     handles[key] = pts
 
+        # Apply the same local transform to any offset tuples stored in frames
+        # (inner_offset, inner_offset_left) so generated cutouts/holes which
+        # rely on these offsets remain consistent when rotation is applied.
+        def _transform_offset(pt):
+            x, y = pt
+            if not rotated:
+                return (tx + x, ty + y)
+            # rotated: same transform used in apply_transform
+            return (tx + (frames.get("outer_height", 0.0) - y), ty + x)
+
+        for off_key in ("inner_offset", "inner_offset_left"):
+            val = frames.get(off_key)
+            if isinstance(val, (tuple, list)) and len(val) == 2:
+                try:
+                    frames[off_key] = _transform_offset((float(val[0]), float(val[1])))
+                except Exception:
+                    # leave as-is on failure
+                    pass
+
         # Normalise all returned point sets so their minimum x/y is 0.0.
         # This makes the geometry's local origin equal to its bounding-box
         # bottom-left which simplifies placement: packer placement coordinates
@@ -109,6 +128,17 @@ def compute_door_geometry(request: DoorDXFRequest, rotated=False, offset=(0.0, 0
                     for hk, hpts in list(handles.items()):
                         if hpts:
                             handles[hk] = shift_pts(hpts, min_all_x, min_all_y)
+                # Also shift any stored offset tuples so generated cutouts/holes
+                # that rely on these offsets remain consistent with the
+                # normalized frame coordinates. Common keys include
+                # 'inner_offset' and 'inner_offset_left'. Adjust them if present.
+                def shift_offset_if_present(key):
+                    v = frames.get(key)
+                    if isinstance(v, (tuple, list)) and len(v) == 2 and isinstance(v[0], (int, float)):
+                        frames[key] = (v[0] - min_all_x, v[1] - min_all_y)
+
+                shift_offset_if_present("inner_offset")
+                shift_offset_if_present("inner_offset_left")
 
     # Frame objects (include left frames for double doors)
     frame_objs = []

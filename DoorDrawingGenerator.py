@@ -12,6 +12,7 @@ from ezdxf.document import Drawing
 from ezdxf.layouts.layout import Modelspace
 from geometry.door_geometry import compute_door_geometry
 from fastapi_app.schemas_input import DoorDXFRequest
+from fastapi_app.schemas_output import SchemasOutput
 
 class DoorDrawingGenerator:
     """
@@ -21,7 +22,8 @@ class DoorDrawingGenerator:
 
     @staticmethod
     def generate_door_dxf(
-        request: DoorDXFRequest,  # expecting DoorDXFRequest pydantic model
+        request: Optional[DoorDXFRequest] = None,
+        schema: Optional[SchemasOutput] = None,
         file_name: Optional[str] = None,
         label_name: Optional[str] = None,
         isannotationRequired: bool = True,
@@ -37,22 +39,44 @@ class DoorDrawingGenerator:
         a new ezdxf document will be created. If `save_file` is True and
         `file_name` is provided the DXF will be saved.
         """
-        if doc is None and (file_name is None or not file_name.lower().endswith('.dxf')):
-            raise ValueError("Output file name must end with .dxf")
+        # Ensure we have either a schema or a request to compute one
+        if schema is None and request is None:
+            raise ValueError("Either 'request' or 'schema' must be provided to generate_door_dxf")
 
+        # If schema not provided, compute it from the request using the offset/rotated flags
+        if schema is None:
+            # request is Optional[DoorDXFRequest] at type-level, but we already
+            # validated above that at least one of request/schema is provided.
+            # Guard for the type-checker and runtime with an assertion.
+            assert request is not None, "request must be provided when schema is not"
+            schema = compute_door_geometry(request, rotated=rotated, offset=offset)
+
+        # Ensure we have a drawing document and modelspace to draw into
         if doc is None or msp is None:
             doc = new(dxfversion="R2010")
-            doc.layers.new(name="CUT", dxfattribs={"color": 4})
-            doc.layers.new(name="DIMENSIONS", dxfattribs={"color": 1})
+            # create common layers if not present
+            try:
+                doc.layers.new(name="CUT", dxfattribs={"color": 4})
+            except Exception:
+                pass
+            try:
+                doc.layers.new(name="DIMENSIONS", dxfattribs={"color": 1})
+            except Exception:
+                pass
+            try:
+                doc.layers.new(name="BIN", dxfattribs={"color": 2})
+            except Exception:
+                pass
             msp = doc.modelspace()
 
-        # Compute geometry and load visual defaults
-        schema = compute_door_geometry(request, rotated=rotated, offset=offset)
-        defaults = request.defaults
-        dim_text_height = getattr(defaults, "dim_text_height", 8.0)
-        dim_arrow_size = getattr(defaults, "dim_arrow_size", 6.0)
-        horiz_dim_offset = getattr(defaults, "horizontal_dim_visual_offset", 20.0)
-        vert_dim_offset = getattr(defaults, "vertical_dim_visual_offset", 40.0)
+        # Visual defaults: prefer values from request.defaults if available
+        defaults = None
+        if request is not None:
+            defaults = getattr(request, "defaults", None)
+        dim_text_height = getattr(defaults, "dim_text_height", 8.0) if defaults is not None else 8.0
+        dim_arrow_size = getattr(defaults, "dim_arrow_size", 6.0) if defaults is not None else 6.0
+        horiz_dim_offset = getattr(defaults, "horizontal_dim_visual_offset", 20.0) if defaults is not None else 20.0
+        vert_dim_offset = getattr(defaults, "vertical_dim_visual_offset", 40.0) if defaults is not None else 40.0
 
         # Determine placement offset from metadata (frames are returned
         # normalized to local origin by compute_door_geometry). Apply the
@@ -78,8 +102,9 @@ class DoorDrawingGenerator:
             msp.add_circle(center, hole.radius, dxfattribs={"layer": hole.layer})
 
         # Draw annotations from schema.geometry.annotations (dimensions, notes, leaders)
-        is_schema_annotation_enabled = getattr(schema.metadata, "is_annotation_required", True) and isannotationRequired
-        for ann in getattr(schema.geometry, "annotations", []) or []:
+        is_schema_annotation_enabled = getattr(schema.metadata, "is_annotation_required", False) and isannotationRequired
+        # Only iterate annotations when enabled; otherwise iterate an empty list so nothing is written
+        for ann in (getattr(schema.geometry, "annotations", []) or []) if is_schema_annotation_enabled else []:
             try:
                 atype = getattr(ann, "type", "dimension")
                 if atype == "dimension":

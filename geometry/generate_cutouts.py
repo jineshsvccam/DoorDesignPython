@@ -15,9 +15,19 @@ def generate_cutouts(params, frames, handles):
 
     # --- Glass cutouts (supports Option1..Option5 for fire doors) ---
     # Minimal, local-coordinate implementation using existing helpers.
-    inner_offset_x, inner_offset_y = frames["inner_offset"]
-    inner_width = params["inner_width"]
-    inner_height = params["inner_height"]
+    # Prefer reading inner bounds from the transformed/normalized inner frame
+    inner_pts = frames.get("inner") or []
+    if inner_pts:
+        xs = [p[0] for p in inner_pts]
+        ys = [p[1] for p in inner_pts]
+        inner_offset_x, inner_offset_y = min(xs), min(ys)
+        inner_width = max(xs) - inner_offset_x
+        inner_height = max(ys) - inner_offset_y
+    else:
+        # Fallback to params when inner frame isn't available
+        inner_offset_x, inner_offset_y = frames.get("inner_offset", (0.0, 0.0))
+        inner_width = params.get("inner_width", 0.0)
+        inner_height = params.get("inner_height", 0.0)
     is_double = params.get("is_double", False)
     leaf_width = params.get("leaf_width", inner_width)
     shift_left = frames.get("shift_left", 0.0)

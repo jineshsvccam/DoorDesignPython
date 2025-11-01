@@ -54,81 +54,158 @@ class DoorDrawingGenerator:
         horiz_dim_offset = getattr(defaults, "horizontal_dim_visual_offset", 20.0)
         vert_dim_offset = getattr(defaults, "vertical_dim_visual_offset", 40.0)
 
+        # Determine placement offset from metadata (frames are returned
+        # normalized to local origin by compute_door_geometry). Apply the
+        # metadata offset when drawing so the DXF entities appear at the
+        # packer placement coordinates.
+        offs = getattr(schema.metadata, "offset", (0.0, 0.0)) or (0.0, 0.0)
+        def _t(p):
+            return (float(p[0]) + offs[0], float(p[1]) + offs[1])
+
         # Draw frames
         for frame in schema.geometry.frames:
-            pts = [tuple(p) for p in frame.points]
+            pts = [_t(p) for p in frame.points]
             msp.add_lwpolyline(pts, dxfattribs={"layer": frame.layer})
 
-        # Draw cutouts
+        # Draw cutouts (apply metadata offset)
         for cut in schema.geometry.cutouts:
-            pts = [tuple(p) for p in cut.points]
+            pts = [_t(p) for p in cut.points]
             msp.add_lwpolyline(pts, dxfattribs={"layer": cut.layer})
 
-        # Draw holes
+        # Draw holes (apply metadata offset)
         for hole in schema.geometry.holes:
-            msp.add_circle(tuple(hole.center), hole.radius, dxfattribs={"layer": hole.layer})
+            center = _t(hole.center)
+            msp.add_circle(center, hole.radius, dxfattribs={"layer": hole.layer})
 
-        # Draw dimensions and center label (combined, tolerant)
-        try:
-            outer = schema.geometry.frames[0].points
-
-            def as_2tuple(pt):
-                return (float(pt[0]), float(pt[1]))
-
-            DoorDrawingGenerator.add_dimension_line(
-                msp,
-                as_2tuple(outer[0]),
-                as_2tuple(outer[1]),
-                f"{int(round(schema.metadata.width))}",
-                offset=horiz_dim_offset,
-                angle=0,
-                isannotationRequired=isannotationRequired,
-                dim_text_height=dim_text_height,
-                dim_arrow_size=dim_arrow_size,
-            )
-
-            DoorDrawingGenerator.add_dimension_line(
-                msp,
-                as_2tuple(outer[0]),
-                as_2tuple(outer[3]),
-                f"{int(round(schema.metadata.height))}",
-                offset=vert_dim_offset,
-                angle=90,
-                isannotationRequired=isannotationRequired,
-                dim_text_height=dim_text_height,
-                dim_arrow_size=dim_arrow_size,
-            )
-
-            # center label using metadata (center point)
-            off_x, off_y = schema.metadata.offset
-            cx = off_x + (schema.metadata.width / 2.0)
-            cy = off_y + (schema.metadata.height / 2.0)
-            line_spacing = dim_text_height * 1.3
-            top_pos = (cx, cy + (line_spacing / 2.0))
-            bot_pos = (cx, cy - (line_spacing / 2.0))
-            line1 = schema.metadata.label or ""
-            line2 = f"{int(round(schema.metadata.width))} x {int(round(schema.metadata.height))}"
-
-            t1 = msp.add_text(line1, dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"})
-            t1.dxf.insert = top_pos
-            t1.dxf.halign = 2
-            t1.dxf.valign = 2
+        # Draw annotations from schema.geometry.annotations (dimensions, notes, leaders)
+        is_schema_annotation_enabled = getattr(schema.metadata, "is_annotation_required", True) and isannotationRequired
+        for ann in getattr(schema.geometry, "annotations", []) or []:
             try:
-                t1.dxf.rotation = 90 if schema.metadata.rotated else 0
-            except Exception:
-                pass
+                atype = getattr(ann, "type", "dimension")
+                if atype == "dimension":
+                    # Draw dimension directly from coordinates in the schema JSON.
+                    raw_from = getattr(ann, "from_", None)
+                    if raw_from is None:
+                        raw_from = getattr(ann, "from", None)
+                    if raw_from is None:
+                        raw_from = (0.0, 0.0)
+                    p1 = _t(raw_from)
 
-            t2 = msp.add_text(line2, dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"})
-            t2.dxf.insert = bot_pos
-            t2.dxf.halign = 2
-            t2.dxf.valign = 2
-            try:
-                t2.dxf.rotation = 90 if schema.metadata.rotated else 0
-            except Exception:
-                pass
+                    raw_to = getattr(ann, "to", None)
+                    if raw_to is None:
+                        raw_to = (0.0, 0.0)
+                    p2 = _t(raw_to)
+                    text = getattr(ann, "text", "")
+                    dim_offset = getattr(ann, "offset", None)
+                    angle = int(getattr(ann, "angle", 0) or 0)
+                    text_offset = getattr(ann, "text_offset", None)
 
-        except Exception:
-            pass
+                    # Determine offsets (fallback to visual defaults)
+                    if dim_offset is None:
+                        dim_offset = horiz_dim_offset if angle == 0 else vert_dim_offset
+                    if text_offset is None:
+                        text_offset = dim_text_height * 2
+
+                    # Compute a parallel (dimension) line shifted by offset from the measured edge
+                    if angle == 0:
+                        # horizontal measured edge: shift in Y
+                        dim_p1 = (p1[0], p1[1] + dim_offset)
+                        dim_p2 = (p2[0], p2[1] + dim_offset)
+                        text_pos = ((p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0 + dim_offset + text_offset)
+                    else:
+                        # vertical measured edge: shift in X
+                        dim_p1 = (p1[0] + dim_offset, p1[1])
+                        dim_p2 = (p2[0] + dim_offset, p2[1])
+                        text_pos = ((p1[0] + p2[0]) / 2.0 + dim_offset + text_offset, (p1[1] + p2[1]) / 2.0)
+
+                    # Draw the dimension line
+                    try:
+                        msp.add_line(dim_p1, dim_p2, dxfattribs={"layer": "DIMENSIONS"})
+                        # Optional short extension lines from measured feature to dimension line
+                        ext_len = 2.0
+                        if angle == 0:
+                            msp.add_line((p1[0], p1[1]), (p1[0], p1[1] + dim_offset - ext_len), dxfattribs={"layer": "DIMENSIONS"})
+                            msp.add_line((p2[0], p2[1]), (p2[0], p2[1] + dim_offset - ext_len), dxfattribs={"layer": "DIMENSIONS"})
+                        else:
+                            msp.add_line((p1[0], p1[1]), (p1[0] + dim_offset - ext_len, p1[1]), dxfattribs={"layer": "DIMENSIONS"})
+                            msp.add_line((p2[0], p2[1]), (p2[0] + dim_offset - ext_len, p2[1]), dxfattribs={"layer": "DIMENSIONS"})
+
+                        # Add text at computed location
+                        txt = msp.add_text(text, dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"})
+                        txt.dxf.insert = text_pos
+                        # Horizontal dims centered, vertical dims left aligned
+                        txt.dxf.halign = 2 if angle == 0 else 0
+                        txt.dxf.valign = 2
+                    except Exception:
+                        # Fallback: place plain text at midpoint of measured feature
+                        mid = ((p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0)
+                        txt = msp.add_text(text, dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"})
+                        txt.dxf.insert = (mid[0], mid[1] + text_offset if angle == 0 else mid[1])
+                        txt.dxf.halign = 2 if angle == 0 else 0
+                        txt.dxf.valign = 2
+                elif atype == "note":
+                    # place note text at the `to` coordinate if present
+                    raw_to = getattr(ann, "to", None)
+                    if raw_to is None:
+                        raw_to = getattr(ann, "from", None)
+                    if raw_to is None:
+                        raw_to = (0.0, 0.0)
+                    pos = _t(raw_to)
+                    txt = msp.add_text(getattr(ann, "text", ""), dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"})
+                    txt.dxf.insert = pos
+                    txt.dxf.halign = 0
+                    txt.dxf.valign = 2
+                elif atype == "leader":
+                    raw_from = getattr(ann, "from_", None)
+                    if raw_from is None:
+                        raw_from = getattr(ann, "from", None)
+                    if raw_from is None:
+                        raw_from = (0.0, 0.0)
+                    p_from = _t(raw_from)
+
+                    raw_to = getattr(ann, "to", None)
+                    if raw_to is None:
+                        raw_to = (0.0, 0.0)
+                    p_to = _t(raw_to)
+                    # simple leader: a line from from->to and the text at `to`
+                    msp.add_line(p_from, p_to, dxfattribs={"layer": "DIMENSIONS"})
+                    txt = msp.add_text(getattr(ann, "text", ""), dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"})
+                    txt.dxf.insert = p_to
+                    txt.dxf.halign = 0
+                    txt.dxf.valign = 2
+            except Exception:
+                # keep drawing even if a single annotation fails
+                continue
+
+        # Draw labels from schema.geometry.labels
+        # Disabled: comment out placement loop and handle one label later if needed
+        # for label in getattr(schema.geometry, "labels", []) or []:
+        #     try:
+        #         ltype = getattr(label, "type", "center_label")
+        #         ltext = getattr(label, "text", "")
+        #         if ltype == "center_label":
+        #             # place centered text inside the door; build simple transform to account for metadata offset
+        #             offs = getattr(schema.metadata, "offset", (0.0, 0.0))
+        #             transform = lambda p: (p[0] + offs[0], p[1] + offs[1])
+        #             DoorDrawingGenerator.add_center_label(
+        #                 msp,
+        #                 transform,
+        #                 getattr(schema.metadata, "width", 0.0),
+        #                 getattr(schema.metadata, "height", 0.0),
+        #                 ltext,
+        #                 rotated,
+        #                 dim_text_height=dim_text_height,
+        #             )
+        #         else:
+        #             # Generic placement for corner or note labels at top-left
+        #             offs = getattr(schema.metadata, "offset", (0.0, 0.0))
+        #             top_left = (offs[0] + 10.0, offs[1] + max(getattr(schema.metadata, "height", 0.0) - 10.0, 10.0))
+        #             txt = msp.add_text(ltext, dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"})
+        #             txt.dxf.insert = top_left
+        #             txt.dxf.halign = 0
+        #             txt.dxf.valign = 2
+        #     except Exception:
+        #         continue
 
         # Save file only if requested
         if save_file and file_name is not None:

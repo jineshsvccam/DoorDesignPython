@@ -2,6 +2,7 @@ import os
 import shutil
 from ezdxf.filemanagement import new
 from DoorDrawingGenerator import DoorDrawingGenerator
+from geometry.door_geometry import compute_door_geometry
 
 
 def generate_bin_dxf(sheet_width, sheet_height, doors, placements, file_name, isannotationRequired=True):
@@ -35,13 +36,12 @@ def generate_bin_dxf(sheet_width, sheet_height, doors, placements, file_name, is
     )
 
     # Draw each door in the bin
+    # Only allow the DoorDXFRequest model and DXF-generation related kwargs
+    # when calling DoorDrawingGenerator.generate_door_dxf. Previous versions
+    # passed measurement primitives which the current signature does not
+    # accept (causing TypeError). Keep only safe keys here.
     allowed_keys = [
-        'width_measurement', 'height_measurement',
-        'left_side_allowance_width', 'right_side_allowance_width',
-        'left_side_allowance_height', 'right_side_allowance_height',
-        'door_minus_measurement_width', 'door_minus_measurement_height',
-        'bending_width', 'bending_height',
-        'file_name', 'isannotationRequired', 'offset', 'doc', 'msp', 'save_file', 'label_name'
+        'request', 'file_name', 'isannotationRequired', 'offset', 'doc', 'msp', 'save_file', 'label_name', 'rotated'
     ]
 
     for door_params, placement in zip(doors, placements):
@@ -69,17 +69,57 @@ def generate_bin_dxf(sheet_width, sheet_height, doors, placements, file_name, is
 
         # Pass rotated flag to DoorDrawingGenerator which will handle coordinate transforms.
         params['rotated'] = rotated
-        # Debug print of key parameters before drawing
-        dbg_keys = [
-            'width_measurement', 'height_measurement',
-            'left_side_allowance_width', 'right_side_allowance_width',
-            'left_side_allowance_height', 'right_side_allowance_height',
-            'door_minus_measurement_width', 'door_minus_measurement_height',
-            'bending_width', 'bending_height'
-        ]
-        dbg_vals = {k: params.get(k) for k in dbg_keys}
-        print(f"[DEBUG bin_dxf] file={door_params.get('file_name')} rotated={rotated} offset={offset} params={dbg_vals}")
-        DoorDrawingGenerator.generate_door_dxf(**params)
+        # Debug: compare requested placement (from packer) with actual
+        # geometry bounding box that will be produced by the generator.
+        dbg_vals = {
+            'file_name': door_params.get('file_name'),
+            'outer_w': door_params.get('outer_width'),
+            'outer_h': door_params.get('outer_height'),
+            'rotated': rotated,
+            'placement_offset': offset,
+        }
+        print(f"[DEBUG bin_dxf] placement request: {dbg_vals}")
+
+        # If we have a DoorDXFRequest, compute the geometry (without saving)
+        # to inspect the transformed frame coordinates and bounding box.
+        if 'request' in params and params['request'] is not None:
+            req = params['request']
+            try:
+                # First compute geometry at origin to get local bbox
+                schema_origin = compute_door_geometry(req, rotated=rotated, offset=(0.0, 0.0))
+                all_pts = [p for f in schema_origin.geometry.frames for p in f.points]
+                if all_pts:
+                    xs = [pt[0] for pt in all_pts]
+                    ys = [pt[1] for pt in all_pts]
+                    local_min_x, local_min_y = min(xs), min(ys)
+                    local_max_x, local_max_y = max(xs), max(ys)
+                else:
+                    local_min_x = local_min_y = local_max_x = local_max_y = 0.0
+
+                # Compute corrected offset so the geometry's local bbox min aligns with placement offset
+                corrected_offset = (offset[0] - local_min_x, offset[1] - local_min_y)
+
+                print(f"[DEBUG bin_dxf] local bbox for {door_params.get('file_name')}: min=({local_min_x},{local_min_y}) max=({local_max_x},{local_max_y})")
+                print(f"[DEBUG bin_dxf] corrected_offset={corrected_offset} (placement {offset} - local_min)")
+            except Exception as e:
+                print(f"[DEBUG bin_dxf] failed to compute geometry for debug: {e}")
+                corrected_offset = offset
+
+            # Now call the existing generator to draw into the shared msp/doc
+            call_kwargs = {
+                'request': req,
+                'file_name': params.get('file_name'),
+                'label_name': params.get('label_name'),
+                'isannotationRequired': params.get('isannotationRequired', isannotationRequired),
+                'offset': corrected_offset,
+                'doc': params.get('doc'),
+                'msp': params.get('msp'),
+                'save_file': params.get('save_file', False),
+                'rotated': params.get('rotated', False),
+            }
+            DoorDrawingGenerator.generate_door_dxf(**call_kwargs)
+        else:
+            raise RuntimeError("Missing 'request' DoorDXFRequest in door_params; cannot generate DXF.")
 
     doc.saveas(file_name)
     print(f" Bin DXF file '{file_name}' created successfully.")

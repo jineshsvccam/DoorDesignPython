@@ -8,37 +8,53 @@ from .apply_transform import apply_transform
 from .create_handles import create_handles
 from .generate_cutouts import generate_cutouts
 from .generate_holes import generate_holes
-from .add_labels import add_labels
+from .add_labels import create_labels
+from .generate_annotations import generate_annotations
 
 
 def compute_door_geometry(request: DoorDXFRequest, rotated=False, offset=(0.0, 0.0)) -> SchemasOutput:
     """Main entrypoint — orchestrates all geometry generation."""
     params = prepare_dimensions(request)
+    # Debug: print rotated flag and placement offset for tracing
+    try:
+        print(f"[DEBUG door_geometry] rotated={rotated}, offset={offset}")
+    except Exception:
+        # Keep function robust in environments where printing may fail
+        pass
     frames = create_base_frames(params)
     handles = create_handles(params, frames)
 
-    # Combine all point sets to compute translation. Filter out None or empty sets
+    # Combine all point sets to compute a single global translation/rotation.
+    # We'll keep a parallel `components` list so we can map transformed
+    # point-sets back into the `frames` and `handles` structures.
     all_sets = []
+    components = []  # list of tuples like ("frame", key) or ("handle", key)
+
     # required frames (outer/inner) — guard if missing
     for key in ("outer", "inner"):
         pts = frames.get(key)
         if pts:
             all_sets.append(pts)
+            components.append(("frame", key))
 
     # handles may be None or empty lists
     rh = handles.get("right_handle") if isinstance(handles, dict) else None
     if rh:
         all_sets.append(rh)
+        components.append(("handle", "right_handle"))
 
     lh = handles.get("left_handle") if isinstance(handles, dict) else None
     if lh:
         all_sets.append(lh)
+        components.append(("handle", "left_handle"))
 
     # optional left-side frames for double doors
     if "left_outer" in frames and frames.get("left_outer"):
         all_sets.append(frames.get("left_outer"))
+        components.append(("frame", "left_outer"))
     if "left_inner" in frames and frames.get("left_inner"):
         all_sets.append(frames.get("left_inner"))
+        components.append(("frame", "left_inner"))
 
     # If for some reason no point sets are available, avoid calling apply_transform
     if not all_sets:
@@ -46,6 +62,53 @@ def compute_door_geometry(request: DoorDXFRequest, rotated=False, offset=(0.0, 0
         tx, ty = 0.0, 0.0
     else:
         transformed, (tx, ty) = apply_transform(all_sets, rotated, offset, frames["outer_height"])
+
+        # Map transformed sets back to frames/handles according to `components` order
+        for comp, pts in zip(components, transformed):
+            typ, key = comp
+            if typ == "frame":
+                frames[key] = pts
+            elif typ == "handle":
+                # ensure handles dict exists and update
+                if isinstance(handles, dict):
+                    handles[key] = pts
+
+        # Normalise all returned point sets so their minimum x/y is 0.0.
+        # This makes the geometry's local origin equal to its bounding-box
+        # bottom-left which simplifies placement: packer placement coordinates
+        # can be used directly as offsets without extra negative corrections.
+        all_x = []
+        all_y = []
+        for k in ("outer", "inner", "left_outer", "left_inner"):
+            pts = frames.get(k)
+            if pts:
+                for p in pts:
+                    all_x.append(p[0])
+                    all_y.append(p[1])
+        if isinstance(handles, dict):
+            for hpts in handles.values():
+                if hpts:
+                    for p in hpts:
+                        all_x.append(p[0])
+                        all_y.append(p[1])
+
+        if all_x and all_y:
+            min_all_x = min(all_x)
+            min_all_y = min(all_y)
+            if min_all_x != 0.0 or min_all_y != 0.0:
+                # shift all frames and handles so bbox min becomes (0,0)
+                def shift_pts(pts, sx, sy):
+                    return [(x - sx, y - sy) for (x, y) in pts]
+
+                for k in ("outer", "inner", "left_outer", "left_inner"):
+                    pts = frames.get(k)
+                    if pts:
+                        frames[k] = shift_pts(pts, min_all_x, min_all_y)
+
+                if isinstance(handles, dict):
+                    for hk, hpts in list(handles.items()):
+                        if hpts:
+                            handles[hk] = shift_pts(hpts, min_all_x, min_all_y)
 
     # Frame objects (include left frames for double doors)
     frame_objs = []
@@ -68,9 +131,11 @@ def compute_door_geometry(request: DoorDXFRequest, rotated=False, offset=(0.0, 0
 
     cutouts = generate_cutouts(params, frames, handles)
     holes = generate_holes(params, frames)
-    labels = add_labels(request)
 
-    geometry = Geometry(frames=frame_objs, cutouts=cutouts, holes=holes, annotations=[], labels=labels)
+    labels = create_labels(request)
+    annotations = generate_annotations(frame_objs, cutouts, holes)
+
+    geometry = Geometry(frames=frame_objs, cutouts=cutouts, holes=holes, annotations=annotations, labels=labels)
 
     # Compute overall width/height from the available frame polygons so metadata reflects
     # single- or double-door bounding box correctly.
@@ -88,7 +153,13 @@ def compute_door_geometry(request: DoorDXFRequest, rotated=False, offset=(0.0, 0
         height=frames["outer_height"],
         rotated=rotated,
         is_annotation_required=True,
-        offset=(offset[0] + tx, offset[1] + ty),
+        # The frames returned by this function are normalized so their local
+        # bounding-box minimum is (0,0). Therefore the placement offset used
+        # for packing should be represented directly in metadata.offset.
+        # Do NOT add the internal translation (tx,ty) here — that translation
+        # was only used to make intermediate coordinates non-negative and was
+        # reversed during normalization.
+        offset=(offset[0], offset[1]),
     )
 
     # Normalize door_type to match the SchemasOutput literal requirement

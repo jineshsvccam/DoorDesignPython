@@ -27,7 +27,7 @@ FILES = [
 # Choose by editing the integer INDEX below (change this before running).
 # Example: set INDEX = 3 to use FILES[3]. This keeps selection simple so you
 # can edit one variable in the file instead of passing CLI args.
-INDEX = 2  # <-- change this integer to select a different file from FILES
+INDEX = 6  # <-- change this integer to select a different file from FILES
 try:
     FILE_TO_RUN = FILES[INDEX]
 except Exception:

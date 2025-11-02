@@ -16,6 +16,20 @@ def generate_cutouts(params, frames, handles):
     # --- Glass cutouts (supports Option1..Option5 for fire doors) ---
     # Minimal, local-coordinate implementation using existing helpers.
     # Prefer reading inner bounds from the transformed/normalized inner frame
+    # Also read outer frame points and compute outer_height for use in
+    # top-margin calculations and fallbacks.
+    outer_pts = frames.get("outer") or []
+    if outer_pts:
+        xs_o = [p[0] for p in outer_pts]
+        ys_o = [p[1] for p in outer_pts]
+        outer_offset_x, outer_offset_y = min(xs_o), min(ys_o)
+        outer_width = max(xs_o) - outer_offset_x
+        outer_height = max(ys_o) - outer_offset_y
+    else:
+        outer_offset_x, outer_offset_y = frames.get("outer_offset", (0.0, 0.0))
+        outer_width = params.get("outer_width", 0.0)
+        outer_height = frames.get("outer_height", params.get("outer_height", 0.0))
+
     inner_pts = frames.get("inner") or []
     if inner_pts:
         xs = [p[0] for p in inner_pts]
@@ -28,6 +42,8 @@ def generate_cutouts(params, frames, handles):
         inner_offset_x, inner_offset_y = frames.get("inner_offset", (0.0, 0.0))
         inner_width = params.get("inner_width", 0.0)
         inner_height = params.get("inner_height", 0.0)
+
+    inner_height = outer_height  # adjustment
     is_double = params.get("is_double", False)
     leaf_width = params.get("leaf_width", inner_width)
     shift_left = frames.get("shift_left", 0.0)

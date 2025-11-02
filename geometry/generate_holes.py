@@ -19,7 +19,10 @@ def generate_holes(params, frames):
         inner_height = params.get("inner_height", 0.0)
 
     circle_center_x = inner_offset_x + defaults.left_circle_offset
-    circle_center_y_top = inner_offset_y + (inner_height - defaults.top_circle_offset) + params.get("bend_adjust", 0.0)
+    # The top hole should be offset down from the top edge by top_circle_offset
+    # and adjusted by the bending offset in the opposite direction to the bottom hole.
+    # Subtract bend_adjust for the top hole so top and bottom maintain symmetric gap.
+    circle_center_y_top = inner_offset_y + (inner_height - defaults.top_circle_offset) - params.get("bend_adjust", 0.0)
     circle_center_y_bottom = inner_offset_y + defaults.top_circle_offset + params.get("bend_adjust", 0.0)
 
     holes = [

@@ -150,6 +150,7 @@ def create_metadata(request, frames, offset, rotated):
         rotated=rotated,
         is_annotation_required=True,
         offset=offset,
+        hole_offset=request.door.hole_offset
     )
 
 
@@ -159,14 +160,13 @@ def normalize_door_type_and_option(params) -> Tuple[Literal['Normal', 'Fire'], O
     door_type = cast(Literal['Normal', 'Fire'], ("Fire" if raw_type == "fire" else "Normal"))
 
     raw_option = (params["door"].option or "").strip().lower()
+    # Only accept the exact option names provided by the business requirements.
     mapping = {
-        "standard": "Option4",
-        "standard_double": "Option4",
-        "standard-double": "Option4",
+        "standard": "Option1",
+        "topfixed": "Option2",
+        "bottomfixed": "Option3",
         "standarddouble": "Option4",
         "fourglass": "Option5",
-        "four_glass": "Option5",
-        "four-glass": "Option5"
     }
 
     normalized_option: Optional[Literal['Option1', 'Option2', 'Option3', 'Option4', 'Option5']] = None

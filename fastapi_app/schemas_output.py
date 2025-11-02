@@ -12,6 +12,7 @@ class Metadata(BaseModel):
     rotated: bool = False
     is_annotation_required: bool = True
     offset: Tuple[float, float] = (0.0, 0.0)
+    hole_offset: str = ""
 
 
 class Frame(BaseModel):

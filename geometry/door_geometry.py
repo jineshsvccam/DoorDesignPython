@@ -1,7 +1,18 @@
-from typing import Tuple, List, Optional
-from fastapi_app.schemas_output import SchemasOutput, Metadata, Geometry, Frame, Cutout, Hole, Label
-from fastapi_app.schemas_input import DoorDXFRequest, DefaultInfo
-from .utilis import compute_frame_dimensions, create_rounded_box, create_rounded_rect, dedupe_consecutive_points
+"""
+door_geometry_service.py
+
+Refactored, modular version of compute_door_geometry() for improved maintainability.
+Performs full geometry pipeline:
+- base frame + handle creation
+- cutouts & holes generation
+- unified transformation (rotate + translate)
+- coordinate normalization
+- metadata & final output
+"""
+
+from typing import Tuple, List, Optional, Literal, cast
+from fastapi_app.schemas_output import SchemasOutput, Metadata, Geometry, Frame, Cutout, Hole
+from fastapi_app.schemas_input import DoorDXFRequest
 from .prepare_dimensions import prepare_dimensions
 from .create_base_frames import create_base_frames
 from .apply_transform import apply_transform
@@ -10,231 +21,214 @@ from .generate_cutouts import generate_cutouts
 from .generate_holes import generate_holes
 from .add_labels import create_labels
 from .generate_annotations import generate_annotations
+from .utilis import compute_frame_dimensions
 
 
-def compute_door_geometry(request: DoorDXFRequest, rotated=False, offset=(0.0, 0.0)) -> SchemasOutput:
-    """Main entrypoint — orchestrates all geometry generation."""
-    params = prepare_dimensions(request)
-    try:
-        print(f"[DEBUG door_geometry] rotated={rotated}, offset={offset}")
-    except Exception:
-        pass
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
 
-    frames = create_base_frames(params)
-    handles = create_handles(params, frames)
+def build_geometry_sets(frames, handles, cutouts, holes):
+    """Collect all frame, handle, cutout, and hole point sets for transformation."""
+    all_sets, components = [], []
 
-    # ✅ Generate cutouts and holes before transformation
-    pre_cutouts = generate_cutouts(params, frames, handles)
-    pre_holes = generate_holes(params, frames)
-
-    # Convert to simple point sets
-    cutout_pointsets = [c.points for c in pre_cutouts if c.points]
-    hole_pointsets = [[h.center] for h in pre_holes if h.center]
-
-    # Build all_sets and components (frames + handles + cutouts + holes)
-    all_sets = []
-    components = []  # ("type", key)
-
-    # Required frames
-    for key in ("outer", "inner"):
-        pts = frames.get(key)
+    def add(key, pts, typ="frame"):
         if pts:
             all_sets.append(pts)
-            components.append(("frame", key))
+            components.append((typ, key))
+
+    # Frames
+    for key in ("outer", "inner", "left_outer", "left_inner"):
+        add(key, frames.get(key), "frame")
 
     # Handles
-    rh = handles.get("right_handle") if isinstance(handles, dict) else None
-    if rh:
-        all_sets.append(rh)
-        components.append(("handle", "right_handle"))
+    if isinstance(handles, dict):
+        for key in ("right_handle", "left_handle"):
+            add(key, handles.get(key), "handle")
 
-    lh = handles.get("left_handle") if isinstance(handles, dict) else None
-    if lh:
-        all_sets.append(lh)
-        components.append(("handle", "left_handle"))
+    # Cutouts & holes
+    for i, c in enumerate(cutouts):
+        add(i, c.points, "cutout")
+    for i, h in enumerate(holes):
+        add(i, [h.center], "hole")
 
-    # Left frames (for double doors)
-    if "left_outer" in frames and frames.get("left_outer"):
-        all_sets.append(frames.get("left_outer"))
-        components.append(("frame", "left_outer"))
-    if "left_inner" in frames and frames.get("left_inner"):
-        all_sets.append(frames.get("left_inner"))
-        components.append(("frame", "left_inner"))
+    return all_sets, components
 
-    # ✅ Append cutouts & holes
-    for i, pts in enumerate(cutout_pointsets):
-        all_sets.append(pts)
-        components.append(("cutout", i))
-    for i, pts in enumerate(hole_pointsets):
-        all_sets.append(pts)
-        components.append(("hole", i))
 
-    # If no sets, skip transform
-    if not all_sets:
-        transformed = []
-        tx, ty = 0.0, 0.0
-    else:
-        transformed, (tx, ty) = apply_transform(all_sets, rotated, offset, frames["outer_height"])
+def map_transformed_sets(frames, handles, cutouts, holes, components, transformed):
+    """Map transformed point sets back into respective geometry structures."""
+    for comp, pts in zip(components, transformed):
+        typ, key = comp
+        if typ == "frame":
+            frames[key] = pts
+        elif typ == "handle" and isinstance(handles, dict):
+            handles[key] = pts
+        elif typ == "cutout":
+            cutouts[key].points = pts
+        elif typ == "hole":
+            holes[key].center = pts[0]
 
-        # Map transformed data back
-        # typed as Optional to reflect initial None placeholders that will
-        # be replaced with lists/tuples after transformation
-        transformed_cutouts: List[Optional[List[Tuple[float, float]]]] = [None] * len(cutout_pointsets)
-        transformed_holes: List[Optional[Tuple[float, float]]] = [None] * len(hole_pointsets)
 
-        for comp, pts in zip(components, transformed):
-            typ, key = comp
-            if typ == "frame":
-                frames[key] = pts
-            elif typ == "handle":
-                if isinstance(handles, dict):
-                    handles[key] = pts
-            elif typ == "cutout":
-                transformed_cutouts[key] = pts
-            elif typ == "hole":
-                transformed_holes[key] = pts[0]  # single center point
+def transform_offsets(frames, tx, ty, rotated):
+    """Apply translation & rotation to stored offset tuples (inner_offset, etc.)."""
+    def _transform(pt):
+        x, y = pt
+        if not rotated:
+            return (tx + x, ty + y)
+        return (tx + (frames.get("outer_height", 0.0) - y), ty + x)
 
-        # ✅ Update transformed cutouts & holes
-        cutouts = []
-        for i, cpts in enumerate(transformed_cutouts):
-            if cpts:
-                base = pre_cutouts[i]
-                cutouts.append(Cutout(name=base.name, layer=base.layer, points=cpts))
+    for off_key in ("inner_offset", "inner_offset_left"):
+        val = frames.get(off_key)
+        if isinstance(val, (tuple, list)) and len(val) == 2:
+            try:
+                frames[off_key] = _transform((float(val[0]), float(val[1])))
+            except Exception:
+                pass
 
-        holes = []
-        for i, center in enumerate(transformed_holes):
-            if center:
-                base = pre_holes[i]
-                holes.append(Hole(name=base.name, layer=base.layer, center=center, radius=base.radius))
 
-        # ✅ Transform offsets (inner_offset, etc.)
-        def _transform_offset(pt):
-            x, y = pt
-            if not rotated:
-                return (tx + x, ty + y)
-            return (tx + (frames.get("outer_height", 0.0) - y), ty + x)
+def normalize_geometry(frames, handles, cutouts, holes):
+    """Shift all coordinates so min(x,y)=0 for consistent placement."""
+    all_x, all_y = [], []
 
-        for off_key in ("inner_offset", "inner_offset_left"):
-            val = frames.get(off_key)
-            if isinstance(val, (tuple, list)) and len(val) == 2:
-                try:
-                    frames[off_key] = _transform_offset((float(val[0]), float(val[1])))
-                except Exception:
-                    pass
+    def collect(pts):
+        for x, y in pts:
+            all_x.append(x)
+            all_y.append(y)
 
-        # ✅ Normalize all coordinates (min x/y → 0)
-        all_x = []
-        all_y = []
-        for k in ("outer", "inner", "left_outer", "left_inner"):
-            pts = frames.get(k)
+    for key in ("outer", "inner", "left_outer", "left_inner"):
+        if frames.get(key):
+            collect(frames[key])
+    if isinstance(handles, dict):
+        for v in handles.values():
+            if v:
+                collect(v)
+    for c in cutouts:
+        collect(c.points)
+    for h in holes:
+        all_x.append(h.center[0])
+        all_y.append(h.center[1])
+
+    if not all_x or not all_y:
+        return
+
+    min_x, min_y = min(all_x), min(all_y)
+    if min_x == 0.0 and min_y == 0.0:
+        return
+
+    def shift(pts): return [(x - min_x, y - min_y) for x, y in pts]
+
+    for k in ("outer", "inner", "left_outer", "left_inner"):
+        if frames.get(k):
+            frames[k] = shift(frames[k])
+    if isinstance(handles, dict):
+        for k, pts in handles.items():
             if pts:
-                for p in pts:
-                    all_x.append(p[0])
-                    all_y.append(p[1])
-        if isinstance(handles, dict):
-            for hpts in handles.values():
-                if hpts:
-                    for p in hpts:
-                        all_x.append(p[0])
-                        all_y.append(p[1])
-        for c in cutouts:
-            for p in c.points:
-                all_x.append(p[0])
-                all_y.append(p[1])
-        for h in holes:
-            all_x.append(h.center[0])
-            all_y.append(h.center[1])
+                handles[k] = shift(pts)
+    for c in cutouts:
+        c.points = shift(c.points)
+    for h in holes:
+        cx, cy = h.center
+        h.center = (cx - min_x, cy - min_y)
 
-        if all_x and all_y:
-            min_all_x = min(all_x)
-            min_all_y = min(all_y)
-            if min_all_x != 0.0 or min_all_y != 0.0:
-                def shift_pts(pts, sx, sy):
-                    return [(x - sx, y - sy) for (x, y) in pts]
+    for off_key in ("inner_offset", "inner_offset_left"):
+        v = frames.get(off_key)
+        if isinstance(v, (tuple, list)) and len(v) == 2:
+            frames[off_key] = (v[0] - min_x, v[1] - min_y)
 
-                for k in ("outer", "inner", "left_outer", "left_inner"):
-                    pts = frames.get(k)
-                    if pts:
-                        frames[k] = shift_pts(pts, min_all_x, min_all_y)
-                if isinstance(handles, dict):
-                    for hk, hpts in list(handles.items()):
-                        if hpts:
-                            handles[hk] = shift_pts(hpts, min_all_x, min_all_y)
-                for c in cutouts:
-                    c.points = shift_pts(c.points, min_all_x, min_all_y)
-                for h in holes:
-                    cx, cy = h.center
-                    h.center = (cx - min_all_x, cy - min_all_y)
 
-                def shift_offset_if_present(key):
-                    v = frames.get(key)
-                    if isinstance(v, (tuple, list)) and len(v) == 2 and isinstance(v[0], (int, float)):
-                        frames[key] = (v[0] - min_all_x, v[1] - min_all_y)
-                shift_offset_if_present("inner_offset")
-                shift_offset_if_present("inner_offset_left")
-    # end of transform section
-
-    # Build Frame objects
-    frame_objs = []
-    for key in ("outer", "inner"):
-        pts = frames.get(key)
-        if not pts:
-            continue
-        w, h = compute_frame_dimensions(pts)
-        frame_objs.append(Frame(name=key, layer="CUT", points=pts, width=w, height=h))
-
-    if "left_outer" in frames or "left_inner" in frames:
-        for key in ("left_outer", "left_inner"):
-            pts = frames.get(key)
-            if not pts:
-                continue
-            w, h = compute_frame_dimensions(pts)
-            frame_objs.append(Frame(name=key, layer="CUT", points=pts, width=w, height=h))
-
-    # Labels + annotations
-    labels = create_labels(request)
-    annotations = generate_annotations(frame_objs, cutouts, holes)
-
-    geometry = Geometry(frames=frame_objs, cutouts=cutouts, holes=holes, annotations=annotations, labels=labels)
-
-    # Metadata
+def create_metadata(request, frames, offset, rotated):
+    """Build metadata safely based on frame geometry."""
     outer_pts = frames.get("outer") or []
-    all_frame_points = list(outer_pts)
-    if "left_outer" in frames:
-        left_outer_pts = frames.get("left_outer") or []
-        all_frame_points += list(left_outer_pts)
-    overall_w, overall_h = compute_frame_dimensions(all_frame_points) if all_frame_points else (0.0, frames.get("outer_height", 0.0))
-
-    metadata = Metadata(
+    left_outer_pts = frames.get("left_outer") or []
+    all_pts = outer_pts + left_outer_pts
+    w, h = compute_frame_dimensions(all_pts) if all_pts else (0.0, frames.get("outer_height", 0.0))
+    return Metadata(
         label=request.metadata.label,
         file_name=request.metadata.file_name,
-        width=overall_w,
+        width=w,
         height=frames["outer_height"],
         rotated=rotated,
         is_annotation_required=True,
-        offset=(offset[0], offset[1]),
+        offset=offset,
     )
 
-    raw_type = (params["door"].type or "").strip().lower()
-    door_type_normalized = "Fire" if raw_type == "fire" else "Normal"
 
-    raw_option = params["door"].option
-    from typing import Literal, cast
-    normalized_option: Literal['Option1', 'Option2', 'Option3', 'Option4', 'Option5'] | None = None
-    if raw_option:
-        o = str(raw_option).strip().lower()
-        if o in ("standard", "standard_double", "standard-double", "standarddouble"):
-            normalized_option = "Option4"
-        elif o in ("fourglass", "four_glass", "four-glass"):
-            normalized_option = "Option5"
-        elif o.startswith("option") and o[6:].isdigit():
-            num = int(o[6:])
-            if 1 <= num <= 5:
-                normalized_option = cast(Literal['Option1', 'Option2', 'Option3', 'Option4', 'Option5'], f"Option{num}")
+def normalize_door_type_and_option(params) -> Tuple[Literal['Normal', 'Fire'], Optional[Literal['Option1', 'Option2', 'Option3', 'Option4', 'Option5']]]:
+    """Standardize door type and option values."""
+    raw_type = (params["door"].type or "").strip().lower()
+    door_type = cast(Literal['Normal', 'Fire'], ("Fire" if raw_type == "fire" else "Normal"))
+
+    raw_option = (params["door"].option or "").strip().lower()
+    mapping = {
+        "standard": "Option4",
+        "standard_double": "Option4",
+        "standard-double": "Option4",
+        "standarddouble": "Option4",
+        "fourglass": "Option5",
+        "four_glass": "Option5",
+        "four-glass": "Option5"
+    }
+
+    normalized_option: Optional[Literal['Option1', 'Option2', 'Option3', 'Option4', 'Option5']] = None
+    if raw_option in mapping:        
+        normalized_option = cast(Optional[Literal['Option1', 'Option2', 'Option3', 'Option4', 'Option5']], mapping[raw_option])
+    elif raw_option.startswith("option") and raw_option[6:].isdigit():
+        num = int(raw_option[6:])
+        if 1 <= num <= 5:
+            normalized_option = cast(Literal['Option1','Option2','Option3','Option4','Option5'], f"Option{num}")
+
+    return door_type, normalized_option
+
+
+# ---------------------------------------------------------------------------
+# Main entrypoint
+# ---------------------------------------------------------------------------
+
+def compute_door_geometry(request: DoorDXFRequest, rotated=False, offset=(0.0, 0.0)) -> SchemasOutput:
+    """Main entrypoint — orchestrates geometry creation, transformation, and output."""
+    params = prepare_dimensions(request)
+    print(f"[DEBUG] rotated={rotated}, offset={offset}")
+
+    # --- Base geometry creation ---
+    frames = create_base_frames(params)
+    handles = create_handles(params, frames)
+    pre_cutouts = generate_cutouts(params, frames, handles)
+    pre_holes = generate_holes(params, frames)
+
+    # --- Unified transformation ---
+    all_sets, components = build_geometry_sets(frames, handles, pre_cutouts, pre_holes)
+    if all_sets:
+        transformed, (tx, ty) = apply_transform(all_sets, rotated, offset, frames["outer_height"])
+        map_transformed_sets(frames, handles, pre_cutouts, pre_holes, components, transformed)
+        transform_offsets(frames, tx, ty, rotated)
+        normalize_geometry(frames, handles, pre_cutouts, pre_holes)
+
+    # --- Frame assembly ---
+    frame_objs = []
+    for key in ("outer", "inner", "left_outer", "left_inner"):
+        pts = frames.get(key)
+        if pts:
+            w, h = compute_frame_dimensions(pts)
+            frame_objs.append(Frame(name=key, layer="CUT", points=pts, width=w, height=h))
+
+    # --- Labels & annotations ---
+    labels = create_labels(request)
+    annotations = generate_annotations(frame_objs, pre_cutouts, pre_holes)
+    geometry = Geometry(
+        frames=frame_objs,
+        cutouts=pre_cutouts,
+        holes=pre_holes,
+        annotations=annotations,
+        labels=labels,
+    )
+
+    # --- Metadata & final output ---
+    metadata = create_metadata(request, frames, offset, rotated)
+    door_type, normalized_option = normalize_door_type_and_option(params)
 
     return SchemasOutput(
         door_category=params["door"].category,
-        door_type=door_type_normalized,
+        door_type=door_type,
         option=normalized_option,
         metadata=metadata,
         geometry=geometry,

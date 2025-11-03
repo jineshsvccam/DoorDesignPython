@@ -75,6 +75,10 @@ def validate_single_door(data):
     results = {}
 
     # --- Parse metadata and frames ---
+    # NOTE: callers (for example `validate_schema`) are expected to
+    # normalize rotated inputs by calling `adjust_for_rotation` once
+    # before invoking this validator. This function assumes the
+    # coordinate system is already non-rotated (Y is vertical).
     meta = data["metadata"]
     meta_w, meta_h = meta["width"], meta["height"]
 
@@ -111,23 +115,36 @@ def validate_single_door(data):
         ),
     )
 
-    # --- Keyholes ---
-    holes = {h["name"]: h["center"] for h in data["geometry"]["holes"]}
+    # --- Keyholes (position-based to handle rotation swaps) ---
+    holes_list = data["geometry"].get("holes", [])
     hole_offset_str = meta.get("hole_offset", "150x40")
     top_bottom_offset, left_offset = map(float, hole_offset_str.lower().split("x"))
 
-    for name, (x, y) in holes.items():
+    # sort holes by Y (top first)
+    holes_sorted = sorted(holes_list, key=lambda h: h["center"][1], reverse=True)
+
+    for idx, h in enumerate(holes_sorted):
+        name = h["name"]
+        x, y = h["center"]
+
+        # always measure horizontal offset from inner-left edge
         left_from_inner = x - inner_left
-        if name == "hole_top":
+
+        # dynamically decide whether this is top or bottom hole
+        if idx == 0:  # highest Y → top hole
             vertical_offset = outer_top - y
-        else:
+            hole_key = "hole_top"
+        else:  # lowest Y → bottom hole
             vertical_offset = y - outer_bottom
+            hole_key = "hole_bottom"
 
         valid = (
             abs(left_from_inner - left_offset) < 0.5
             and abs(vertical_offset - top_bottom_offset) < 0.5
         )
-        results[name] = {
+
+        results[hole_key] = {
+            "reported_name": name,
             "left": round(left_from_inner, 2),
             "vertical": round(vertical_offset, 2),
             "is_valid": valid,
@@ -296,6 +313,86 @@ def validate_double_door(data):
 # ===============================================================
 # 🧮 MAIN ENTRY FUNCTION
 # ===============================================================
+def adjust_for_rotation(data):
+    """Swaps X/Y meaning if metadata.rotated=True.
+
+    This mutates the provided dict in-place and returns it. Call this
+    before running geometry checks so the validators can assume a
+    non-rotated coordinate system.
+    """
+    if not data.get("metadata", {}).get("rotated", False):
+        return data  # No rotation
+
+    geom = data["geometry"]
+    for frame in geom.get("frames", []):
+        frame["points"] = [(y, x) for (x, y) in frame["points"]]
+    for cutout in geom.get("cutouts", []):
+        cutout["points"] = [(y, x) for (x, y) in cutout["points"]]
+    for hole in geom.get("holes", []):
+        hole["center"] = (hole["center"][1], hole["center"][0])
+    return data
+
+
+def validate_schema(schema) -> bool:
+    """
+    Validate an in-memory schema object (either a dict matching the
+    SchemasOutput contract or a Pydantic BaseModel instance) and return a
+    boolean indicating pass (True) or fail (False).
+
+    This wraps the existing dict-oriented validation functions so callers
+    (for example the DXF generator) can validate a computed/received
+    `SchemasOutput` object without writing it to disk.
+    """
+    # Convert Pydantic models to plain dict if necessary
+    try:
+        data = schema.dict() if hasattr(schema, "dict") else dict(schema)
+    except Exception:
+        # Fallback: assume already a dict-like
+        data = schema
+
+    # If the schema indicates it was rotated, adjust coordinates so the
+    # downstream validators can operate in a consistent (unrotated)
+    # coordinate system.
+    try:
+        data = adjust_for_rotation(data)
+    except Exception:
+        # If rotation adjustment fails, treat as validation failure and
+        # print an error detail for callers.
+        try:
+            print(json.dumps({"validation": {"error": "rotation_adjustment_failed"}}, indent=2))
+        except Exception:
+            pass
+        return False
+
+    # Delegate to the correct validator based on door_category
+    if isinstance(data, dict) and data.get("door_category") == "Double":
+        result = validate_double_door(data)
+    else:
+        result = validate_single_door(data)
+
+    # Determine pass/fail by collecting any explicit boolean validity flags
+    flags = _collect_valid_flags(result)
+    if flags:
+        passed = all(flags)
+    else:
+        # Fallback: accept top-level indicators if present
+        if result.get("is_single_door") is True or result.get("is_double_door") is True:
+            passed = True
+        else:
+            passed = False
+
+    # If validation fails, print the detailed result as JSON so callers
+    # (for example the DXF generator) can report or persist it.
+    if not passed:
+        try:
+            print(json.dumps({"validation": result}, indent=2))
+        except Exception:
+            # If printing fails for some reason, still return False
+            pass
+
+    return passed
+
+
 def validate_geometry_auto(json_path: str):
     data = json.loads(Path(json_path).read_text())
 

@@ -51,6 +51,39 @@ class DoorDrawingGenerator:
             assert request is not None, "request must be provided when schema is not"
             schema = compute_door_geometry(request, rotated=rotated, offset=offset)
 
+        # Validate the computed / provided schema before drawing. Call the
+        # centralized `validate_schema(schema)` function in `tools.validator`.
+        # The validator performs all checks and prints a detailed JSON result
+        # if validation fails. If validator is unavailable or raises an
+        # exception we abort to avoid producing incorrect DXFs.
+        try:
+            try:
+                from tools.validator import validate_schema
+            except Exception:
+                import runpy, os
+                validator_path = os.path.join(os.path.dirname(__file__), "tools", "validator.py")
+                validator_ns = runpy.run_path(validator_path)
+                validate_schema = validator_ns.get("validate_schema")
+
+            if not validate_schema:
+                print("Validator not available; aborting DXF generation to avoid unsafe output.")
+                return
+
+            passed = bool(validate_schema(schema))
+            # passed = True
+        except Exception as e:
+            try:
+                import traceback, json
+                err = {"validation_error": str(e), "traceback": traceback.format_exc()}
+                print(json.dumps(err, indent=2))
+            except Exception:
+                print("Validation failed and error details could not be serialized.")
+            return
+
+        if not passed:
+            # Validator already printed the detailed JSON; abort drawing.
+            return
+
         # Ensure we have a drawing document and modelspace to draw into
         if doc is None or msp is None:
             doc = new(dxfversion="R2010")

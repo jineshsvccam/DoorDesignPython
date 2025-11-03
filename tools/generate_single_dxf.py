@@ -25,7 +25,7 @@ FILES = [
     "SingleNormal.json",
 ]
 # Choose by editing the integer INDEX below (change this before running).
-INDEX = 4  # <-- change this integer to select a different file from FILES
+INDEX = 6  # <-- change this integer to select a different file from FILES
 try:
     FILE_TO_RUN = FILES[INDEX]
 except Exception:

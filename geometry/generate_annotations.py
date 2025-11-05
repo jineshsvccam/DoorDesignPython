@@ -7,6 +7,17 @@ def _bbox(points: List[Tuple[float, float]]):
     ys = [p[1] for p in points]
     return min(xs), min(ys), max(xs), max(ys)
 
+def _get_name(obj: Any):
+    return getattr(obj, "name", None) or (obj.get("name") if isinstance(obj, dict) else None)
+
+
+def _get_points(obj: Any):
+    if hasattr(obj, "points"):
+        return obj.points
+    if isinstance(obj, dict):
+        return obj.get("points")
+    return obj
+
 
 def _frame_dimensions_annotations(frame: Any, offset_base: float = 10.0, placement: str = "bottom_left"):
     """Create width/height annotations for a frame.
@@ -70,8 +81,8 @@ def _frame_dimensions_annotations(frame: Any, offset_base: float = 10.0, placeme
     return [width_ann, height_ann]
 
 
-def _cutout_dimensions_annotations(cutout: Any, offset_base: float = 6.0):
-    pts = cutout.points
+def _cutout_dimensions_annotations(cutout: Any, left_frame: Any = None, offset_base: float = 6.0):
+    pts = _get_points(cutout) or []
     min_x, min_y, max_x, max_y = _bbox(pts)
     width = round(max_x - min_x, 3)
     height = round(max_y - min_y, 3)
@@ -102,15 +113,143 @@ def _cutout_dimensions_annotations(cutout: Any, offset_base: float = 6.0):
         "angle": 90.0,
     })
 
-    return [width_ann, height_ann]
+    anns = [width_ann, height_ann]
+
+    # Optional left-gap: measure from the provided left_frame right edge
+    if left_frame is not None:
+        lf_pts = _get_points(left_frame) or []
+        if lf_pts:
+            lf_right = max(p[0] for p in lf_pts)
+            gap = round(max(0.0, min_x - lf_right), 3)
+            if gap > 0:
+                anns.append(Annotation.parse_obj({
+                    "type": "dimension",
+                    "from": (lf_right, (min_y + max_y) / 2.0),
+                    "to": (min_x, (min_y + max_y) / 2.0),
+                    "text": f"G {gap}",
+                    "offset": -offset_base,
+                    "angle": 0.0,
+                }))
+
+    return anns
+
+
+def _glass_cut_annotations(cutout: Any, inner_frame: Any, outer_frame: Any, offset_base: float = 6.0) -> List[Annotation]:
+    """Create five annotations for a glass cut:
+    - left and right distances from the inner frame edges
+    - top and bottom distances from the outer frame edges
+    - an internal note (box) displaying the cutout W x H centered inside the cutout
+    """
+    anns: List[Annotation] = []
+    pts = _get_points(cutout) or []
+    if not pts:
+        return anns
+    min_x, min_y, max_x, max_y = _bbox(pts)
+    cx = (min_x + max_x) / 2.0
+    cy = (min_y + max_y) / 2.0
+
+    # Width/height for internal label
+    width = round(max_x - min_x, 3)
+    height = round(max_y - min_y, 3)
+
+    # Resolve inner frame extents (prefer provided inner_frame, else find by name)
+    inner_left = None
+    inner_right = None
+    if inner_frame is not None:
+        ipts = _get_points(inner_frame) or []
+        if ipts:
+            inner_left = min(p[0] for p in ipts)
+            inner_right = max(p[0] for p in ipts)
+    if (inner_left is None or inner_right is None):
+        # try to find frame named 'inner' in the caller's frames list by inspecting variable scope (best-effort)
+        # Note: caller usually passes inner_frame; fallback omitted here for simplicity.
+        pass
+
+    # Resolve outer frame extents
+    outer_top = None
+    outer_bot = None
+    if outer_frame is not None:
+        of_pts = _get_points(outer_frame) or []
+        if of_pts:
+            outer_top = max(p[1] for p in of_pts)
+            outer_bot = min(p[1] for p in of_pts)
+
+    # Left gap from inner_left -> cutout left
+    if inner_left is not None:
+        gap_left = round(max(0.0, min_x - inner_left), 3)
+        if gap_left > 0:
+            anns.append(Annotation.parse_obj({
+                "type": "dimension",
+                "from": (inner_left, cy),
+                "to": (min_x, cy),
+                "text": f"G {gap_left}",
+                "offset": -offset_base,
+                "angle": 0.0,
+            }))
+
+    # Right gap from cutout right -> inner_right
+    if inner_right is not None:
+        gap_right = round(max(0.0, inner_right - max_x), 3)
+        if gap_right > 0:
+            anns.append(Annotation.parse_obj({
+                "type": "dimension",
+                "from": (max_x, cy),
+                "to": (inner_right, cy),
+                "text": f"G {gap_right}",
+                "offset": -offset_base,
+                "angle": 0.0,
+            }))
+
+    # Top gap from outer_top -> cutout top
+    if outer_top is not None:
+        gap_top = round(max(0.0, outer_top - max_y), 3)
+        if gap_top > 0:
+            anns.append(Annotation.parse_obj({
+                "type": "dimension",
+                "from": (cx, max_y),
+                "to": (cx, outer_top),
+                "text": f"G {gap_top}",
+                "offset": offset_base,
+                "angle": 90.0,
+            }))
+
+    # Bottom gap from cutout bottom -> outer_bot
+    if outer_bot is not None:
+        gap_bot = round(max(0.0, min_y - outer_bot), 3)
+        if gap_bot > 0:
+            anns.append(Annotation.parse_obj({
+                "type": "dimension",
+                "from": (cx, outer_bot),
+                "to": (cx, min_y),
+                "text": f"G {gap_bot}",
+                "offset": offset_base,
+                "angle": 90.0,
+            }))
+
+    # Internal label: draw a small horizontal dimension across the inside so
+    # renderers that ignore 'note' will still show the W x H text.
+    inner_from_x = min_x + (max_x - min_x) * 0.25
+    inner_to_x = max_x - (max_x - min_x) * 0.25
+    if inner_to_x > inner_from_x:
+        anns.append(Annotation.parse_obj({
+            "type": "dimension",
+            "from": (inner_from_x, cy),
+            "to": (inner_to_x, cy),
+            "text": f"W {width} x H {height}",
+            "offset": 0.0,
+            "angle": 0.0,
+        }))
+
+    return anns
 
 
 def _hole_dimensions_annotations(hole: Any, offset_base: float = 4.0):
     cx, cy = hole.center
     dia = round(hole.radius * 2.0, 3)
 
-    p_from = (cx, cy)
-    p_to = (cx + hole.radius * 1.5, cy)
+    # Draw the diameter line across the circle (left edge to right edge)
+    p_from = (cx - hole.radius, cy)
+    p_to = (cx + hole.radius, cy)
     text = f"Ø{dia}"
 
     ann = Annotation.parse_obj({
@@ -221,30 +360,336 @@ def _frame_gap_annotation(frame1: Any, frame2: Any, offset_base: float = 6.0):
     return [ann] if ann is not None else []
 
 
-def generate_annotations(frames: List[Any], cutouts: List[Any], holes: List[Any]) -> List[Annotation]:
-    """Generate a flattened list of Annotation objects from provided geometry lists.
+def _center_handle_annotations(center_cut: Any, left_frame: Any, outer_frame: Any) -> List[Annotation]:
+    anns: List[Annotation] = []
+    pts = _get_points(center_cut) or []
+    if not pts:
+        return anns
+    c_min_x, c_min_y, c_max_x, c_max_y = _bbox(pts)
+    c_cx = (c_min_x + c_max_x) / 2.0
+    c_cy = (c_min_y + c_max_y) / 2.0
 
-    This function intentionally uses simple bbox-based dimensions. For more
-    sophisticated dimensioning (rotated frames, ledgers, etc.) extend the
-    helper functions accordingly.
+    # Horizontal gap to left inner frame
+    if left_frame is not None:
+        lf_pts = _get_points(left_frame) or []
+        if lf_pts:
+            lf_right = max(p[0] for p in lf_pts)
+            gap_h = round(max(0.0, c_min_x - lf_right), 3)
+            if gap_h > 0:
+                anns.append(Annotation.parse_obj({
+                    "type": "dimension",
+                    "from": (lf_right, c_cy),
+                    "to": (c_min_x, c_cy),
+                    "text": f"G {gap_h}",
+                    "offset": 6.0,
+                    "angle": 0.0,
+                }))
+
+    # Vertical gaps to outer frame top/bottom
+    if outer_frame is not None:
+        of_pts = _get_points(outer_frame) or []
+        if of_pts:
+            of_top = max(p[1] for p in of_pts)
+            of_bot = min(p[1] for p in of_pts)
+
+            gap_top = round(max(0.0, of_top - c_max_y), 3)
+            if gap_top > 0:
+                anns.append(Annotation.parse_obj({
+                    "type": "dimension",
+                    "from": (c_cx, c_max_y),
+                    "to": (c_cx, of_top),
+                    "text": f"G {gap_top}",
+                    "offset": 6.0,
+                    "angle": 90.0,
+                }))
+
+            gap_bot = round(max(0.0, c_min_y - of_bot), 3)
+            if gap_bot > 0:
+                anns.append(Annotation.parse_obj({
+                    "type": "dimension",
+                    "from": (c_cx, of_bot),
+                    "to": (c_cx, c_min_y),
+                    "text": f"G {gap_bot}",
+                    "offset": 6.0,
+                    "angle": 90.0,
+                }))
+
+    return anns
+
+
+def _keybox_annotations(key_cut: Any, frames: List[Any], outer_frame: Any) -> List[Annotation]:
+    anns: List[Annotation] = []
+    k_pts = _get_points(key_cut) or []
+    if not k_pts:
+        return anns
+    k_min_x, k_min_y, k_max_x, k_max_y = _bbox(k_pts)
+    k_cx = (k_min_x + k_max_x) / 2.0
+    k_cy = (k_min_y + k_max_y) / 2.0
+
+    # find nearest frame to the left and right of key center
+    left_candidates = []
+    right_candidates = []
+    for fr in (frames or []):
+        fps = _get_points(fr) or []
+        if not fps:
+            continue
+        fr_min_x = min(p[0] for p in fps)
+        fr_max_x = max(p[0] for p in fps)
+        if fr_max_x <= k_cx:
+            left_candidates.append((fr_max_x, fr))
+        if fr_min_x >= k_cx:
+            right_candidates.append((fr_min_x, fr))
+
+    left_ref_x = None
+    if left_candidates:
+        left_ref_x = max(left_candidates, key=lambda t: t[0])[0]
+    right_ref_x = None
+    if right_candidates:
+        right_ref_x = min(right_candidates, key=lambda t: t[0])[0]
+
+    # Fallback: look for explicitly named left/right/inner frames if nearest
+    # candidate search didn't find suitable edges. This helps when frames are
+    # provided but the simple center-based split misses them.
+    if left_ref_x is None and frames:
+        for nm in ("left_inner", "left_outer", "inner"):
+            fr = next((fr for fr in frames if ((_get_name(fr) or "").strip().lower() == nm)), None)
+            if fr is not None:
+                fps = _get_points(fr) or []
+                if fps:
+                    left_ref_x = max(p[0] for p in fps)
+                    break
+    if right_ref_x is None and frames:
+        for nm in ("right_inner", "right_outer", "inner"):
+            fr = next((fr for fr in frames if ((_get_name(fr) or "").strip().lower() == nm)), None)
+            if fr is not None:
+                fps = _get_points(fr) or []
+                if fps:
+                    right_ref_x = min(p[0] for p in fps)
+                    break
+
+    # horizontal gaps
+    if left_ref_x is not None:
+        gap_left = round(max(0.0, k_min_x - left_ref_x), 3)
+        if gap_left > 0:
+            anns.append(Annotation.parse_obj({
+                "type": "dimension",
+                "from": (left_ref_x, k_cy),
+                "to": (k_min_x, k_cy),
+                "text": f"G {gap_left}",
+                "offset": 6.0,
+                "angle": 0.0,
+            }))
+    if right_ref_x is not None:
+        gap_right = round(max(0.0, right_ref_x - k_max_x), 3)
+        if gap_right > 0:
+            anns.append(Annotation.parse_obj({
+                "type": "dimension",
+                "from": (k_max_x, k_cy),
+                "to": (right_ref_x, k_cy),
+                "text": f"G {gap_right}",
+                "offset": 6.0,
+                "angle": 0.0,
+            }))
+
+    # bottom gap to outer frame bottom
+    ofr = outer_frame if outer_frame is not None else None
+    if ofr is None:
+        ofr = next((fr for fr in (frames or []) if (_get_name(fr) or "").strip().lower() == "outer"), None)
+    if ofr is not None:
+        of_pts = _get_points(ofr) or []
+        if of_pts:
+            of_bot = min(p[1] for p in of_pts)
+            gap_bot = round(max(0.0, k_min_y - of_bot), 3)
+            if gap_bot > 0:
+                anns.append(Annotation.parse_obj({
+                    "type": "dimension",
+                    "from": (k_cx, of_bot),
+                    "to": (k_cx, k_min_y),
+                    "text": f"G {gap_bot}",
+                    "offset": 6.0,
+                    "angle": 90.0,
+                }))
+
+    return anns
+
+
+def _hole_offset_annotations(hole: Any, frames: List[Any], inner_frame: Any, outer_frame: Any) -> List[Annotation]:
+    anns: List[Annotation] = []
+    h_name = (_get_name(hole) or "").strip().lower()
+    if h_name not in ("hole_top", "hole_bottom"):
+        return anns
+    try:
+        hx, hy = hole.center
+    except Exception:
+        return anns
+
+    # Determine inner (for left offset) and outer (for top/bottom) frame extents
+    inner_left = None
+    if inner_frame is not None:
+        ipts = _get_points(inner_frame) or []
+        if ipts:
+            inner_left = min(p[0] for p in ipts)
+    # fallback: try to find a frame named 'inner'
+    if inner_left is None and frames:
+        fr_in = next((fr for fr in frames if ((_get_name(fr) or "").strip().lower() == "inner")), None)
+        if fr_in is not None:
+            ipts = _get_points(fr_in) or []
+            if ipts:
+                inner_left = min(p[0] for p in ipts)
+
+    of = outer_frame if outer_frame is not None else None
+    if of is None and frames:
+        of = next((fr for fr in frames if ((_get_name(fr) or "").strip().lower() == "outer")), None)
+
+    outer_left = None
+    outer_top = None
+    outer_bot = None
+    if of is not None:
+        of_pts = _get_points(of) or []
+        if of_pts:
+            outer_left = min(p[0] for p in of_pts)
+            outer_top = max(p[1] for p in of_pts)
+            outer_bot = min(p[1] for p in of_pts)
+    else:
+        if frames:
+            all_x = [p[0] for fr in frames for p in (_get_points(fr) or [])]
+            all_y = [p[1] for fr in frames for p in (_get_points(fr) or [])]
+            if all_x:
+                outer_left = min(all_x)
+            if all_y:
+                outer_top = max(all_y)
+                outer_bot = min(all_y)
+
+    # Horizontal offset from inner left edge to hole center (preferred)
+    if inner_left is not None:
+        dx = round(max(0.0, hx - inner_left), 3)
+        if dx > 0:
+            anns.append(Annotation.parse_obj({
+                "type": "dimension",
+                "from": (inner_left, hy),
+                "to": (hx, hy),
+                "text": f"X {dx}",
+                "offset": 6.0,
+                "angle": 0.0,
+            }))
+    elif outer_left is not None:
+        dx = round(max(0.0, hx - outer_left), 3)
+        if dx > 0:
+            anns.append(Annotation.parse_obj({
+                "type": "dimension",
+                "from": (outer_left, hy),
+                "to": (hx, hy),
+                "text": f"X {dx}",
+                "offset": 6.0,
+                "angle": 0.0,
+            }))
+
+    # Vertical offsets
+    if h_name == "hole_top" and outer_top is not None:
+        dy = round(max(0.0, outer_top - hy), 3)
+        if dy > 0:
+            anns.append(Annotation.parse_obj({
+                "type": "dimension",
+                "from": (hx, hy),
+                "to": (hx, outer_top),
+                "text": f"Y {dy}",
+                "offset": 6.0,
+                "angle": 90.0,
+            }))
+    if h_name == "hole_bottom" and outer_bot is not None:
+        dyb = round(max(0.0, hy - outer_bot), 3)
+        if dyb > 0:
+            anns.append(Annotation.parse_obj({
+                "type": "dimension",
+                "from": (hx, outer_bot),
+                "to": (hx, hy),
+                "text": f"Y {dyb}",
+                "offset": 6.0,
+                "angle": 90.0,
+            }))
+
+    return anns
+
+def generate_annotations(frames: List[Any], cutouts: List[Any], holes: List[Any]) -> List[Annotation]:
+    """Generate annotations for frames, cutouts, and holes.
+
+    - Each frame gets its own dimension.
+    - Even frames -> bottom-left, Odd frames -> top-right.
+    - Offsets automatically adjusted so dimension lines sit outside all frames.
     """
+
     annotations: List[Annotation] = []
 
-    for i, f in enumerate(frames or []):
-        offs = 8.0 + i * 4.0
-        # Alternate placement clockwise: even frames -> bottom_left, odd -> top_right
-        placement = "bottom_left" if (i % 2) == 0 else "top_right"
-        annotations.extend(_frame_dimensions_annotations(f, offset_base=offs, placement=placement))
+    # Cached frame lookups so other parts (center handle, keybox, holes)
+    # can reuse the same frames without repeating search logic.
 
+    left_frame = None
+    outer_frame = None
+    inner_frame = None
+    left_outer_frame = None
+    if frames:
+        # prefer explicit left_inner and outer frames by name
+        for fr in frames:
+            nm = (_get_name(fr) or "").strip().lower()
+            if nm == "left_inner":
+                left_frame = fr
+            elif nm == "left_outer":
+                left_outer_frame = fr
+            elif nm == "inner":
+                inner_frame = fr
+            elif nm == "outer":
+                outer_frame = fr
+        # fallback: if left_inner absent, prefer 'inner'
+        if left_frame is None:
+            left_frame = next((fr for fr in frames if ((_get_name(fr) or "").strip().lower() == "inner")), None)
+
+    # --- 🧩 Handle frames ---
+    if frames:
+        # Fixed clearance (distance from extreme outer bbox to annotation lines).
+        clearance = 5.0
+
+        for i, f in enumerate(frames):
+            placement = "bottom_left" if (i % 2) == 0 else "top_right"
+            # Place width/height annotations for this frame using a fixed
+            # clearance so outer annotation gaps are consistent.
+            annotations.extend(_frame_dimensions_annotations(
+                f,
+                offset_base=clearance,
+                placement=placement,
+            ))
+
+    # --- 🧩 Existing logic for cutouts ---
     for i, c in enumerate(cutouts or []):
         offs = 6.0 + i * 3.0
-        annotations.extend(_cutout_dimensions_annotations(c, offset_base=offs))
+        name = (_get_name(c) or "").strip().lower()
+        # glass_cut gets a custom set of annotations: left/right from inner, top/bottom from outer,
+        # plus an internal box note. Other cutouts use the generic cutout dims (width/height).
+        if name == "glass_cut":
+            annotations.extend(_glass_cut_annotations(c, inner_frame, outer_frame, offset_base=offs))
+        else:
+            # pass left_frame so cutout dims include left-gap to inner frame when available
+            annotations.extend(_cutout_dimensions_annotations(c, left_frame, offset_base=offs))
 
+    # --- 🧩 Extra measurements for center handle ---
+    center_cut = next((c for c in (cutouts or []) if (_get_name(c) or "").strip().lower() == "center_handle"), None)
+    if center_cut:
+        annotations.extend(_center_handle_annotations(center_cut, left_frame, outer_frame))
+
+    # --- 🧩 Existing logic for holes ---
     for i, h in enumerate(holes or []):
         offs = 4.0 + i * 2.0
         annotations.extend(_hole_dimensions_annotations(h, offset_base=offs))
+        # use inner_frame for horizontal offset and outer_frame for vertical offsets
+        annotations.extend(_hole_offset_annotations(h, frames, inner_frame, outer_frame))
 
-    # Annotate gaps between frame pairs: (0,1) and (2,3) if available
+    # --- 🧩 Keybox extra measurements ---
+    # Find a 'keybox' cutout and annotate horizontal gaps to nearest frames
+    # (left/right) and vertical gap from outer bottom to keybox bottom.
+    key_cut = next((c for c in (cutouts or []) if (_get_name(c) or "").strip().lower() == "keybox"), None)
+    if key_cut:
+        annotations.extend(_keybox_annotations(key_cut, frames, outer_frame))
+
+    # --- 🧩 Frame gap annotations (your original logic) ---
     if frames and len(frames) >= 2:
         annotations.extend(_frame_gap_annotation(frames[0], frames[1], offset_base=6.0))
     if frames and len(frames) >= 4:

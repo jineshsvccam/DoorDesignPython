@@ -71,7 +71,11 @@ def generate_cutouts(params, frames, handles):
 
     # Helper collections
     glass_cutouts_to_add = []
-    add_standard_glass_cutout = True
+    # By default do not add a standard glass cutout. Enable it only for
+    # fire-door code paths that explicitly create `pts_box` (single-panel
+    # fire doors or other fire-specific branches). This prevents adding a
+    # glass cut for normal non-fire doors.
+    add_standard_glass_cutout = False
 
     # small rounded fallback radius
     rounded_radius = min(defaults.box_height / 2.0, defaults.box_width / 2.0)
@@ -195,6 +199,9 @@ def generate_cutouts(params, frames, handles):
         radius = min(getattr(defaults, "glass_corner_radius", rounded_radius), glass_w / 2.0 if glass_w else 0.0, glass_h / 2.0 if glass_h else 0.0)
         pts_box = create_rounded_rect(glass_left, glass_bottom, glass_w, glass_h, radius, segments=getattr(defaults, "glass_segments", 8))
         pts_box = dedupe_consecutive_points(pts_box)
+        # Mark that we should add the standard glass cutout for this
+        # fire-door single-panel case.
+        add_standard_glass_cutout = True
 
     # Double-door Option5: four panels
     elif is_double and _eq_str(door_info.type, "fire") and opt_normalized == "Option5":

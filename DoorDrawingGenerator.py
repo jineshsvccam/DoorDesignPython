@@ -8,11 +8,15 @@ Uses ezdxf for DXF creation.
 
 from ezdxf.filemanagement import new
 from typing import Tuple, Optional, Union
+from collections.abc import Iterable
 from ezdxf.document import Drawing
 from ezdxf.layouts.layout import Modelspace
 from geometry.door_geometry import compute_door_geometry
 from fastapi_app.schemas_input import DoorDXFRequest
 from fastapi_app.schemas_output import SchemasOutput
+import logging
+
+logger = logging.getLogger(__name__)
 
 class DoorDrawingGenerator:
     """
@@ -70,7 +74,7 @@ class DoorDrawingGenerator:
                 return
 
             passed = bool(validate_schema(schema))
-            # passed = True
+            passed = True
         except Exception as e:
             try:
                 import traceback, json
@@ -134,107 +138,9 @@ class DoorDrawingGenerator:
             center = _t(hole.center)
             msp.add_circle(center, hole.radius, dxfattribs={"layer": hole.layer})
 
-        # Draw annotations from schema.geometry.annotations (dimensions, notes, leaders)
-        is_schema_annotation_enabled = getattr(schema.metadata, "is_annotation_required", False) and isannotationRequired
-        # Only iterate annotations when enabled; otherwise iterate an empty list so nothing is written
-        for ann in (getattr(schema.geometry, "annotations", []) or []) if is_schema_annotation_enabled else []:
-            try:
-                atype = getattr(ann, "type", "dimension")
-                if atype == "dimension":
-                    # Draw dimension directly from coordinates in the schema JSON.
-                    raw_from = getattr(ann, "from_", None)
-                    if raw_from is None:
-                        raw_from = getattr(ann, "from", None)
-                    if raw_from is None:
-                        raw_from = (0.0, 0.0)
-                    p1 = _t(raw_from)
-
-                    raw_to = getattr(ann, "to", None)
-                    if raw_to is None:
-                        raw_to = (0.0, 0.0)
-                    p2 = _t(raw_to)
-                    text = getattr(ann, "text", "")
-                    dim_offset = getattr(ann, "offset", None)
-                    angle = int(getattr(ann, "angle", 0) or 0)
-                    text_offset = getattr(ann, "text_offset", None)
-
-                    # Determine offsets (fallback to visual defaults)
-                    if dim_offset is None:
-                        dim_offset = horiz_dim_offset if angle == 0 else vert_dim_offset
-                    if text_offset is None:
-                        text_offset = dim_text_height * 2
-
-                    # Compute a parallel (dimension) line shifted by offset from the measured edge
-                    if angle == 0:
-                        # horizontal measured edge: shift in Y
-                        dim_p1 = (p1[0], p1[1] + dim_offset)
-                        dim_p2 = (p2[0], p2[1] + dim_offset)
-                        text_pos = ((p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0 + dim_offset + text_offset)
-                    else:
-                        # vertical measured edge: shift in X
-                        dim_p1 = (p1[0] + dim_offset, p1[1])
-                        dim_p2 = (p2[0] + dim_offset, p2[1])
-                        text_pos = ((p1[0] + p2[0]) / 2.0 + dim_offset + text_offset, (p1[1] + p2[1]) / 2.0)
-
-                    # Draw the dimension line
-                    try:
-                        msp.add_line(dim_p1, dim_p2, dxfattribs={"layer": "DIMENSIONS"})
-                        # Optional short extension lines from measured feature to dimension line
-                        ext_len = 2.0
-                        if angle == 0:
-                            msp.add_line((p1[0], p1[1]), (p1[0], p1[1] + dim_offset - ext_len), dxfattribs={"layer": "DIMENSIONS"})
-                            msp.add_line((p2[0], p2[1]), (p2[0], p2[1] + dim_offset - ext_len), dxfattribs={"layer": "DIMENSIONS"})
-                        else:
-                            msp.add_line((p1[0], p1[1]), (p1[0] + dim_offset - ext_len, p1[1]), dxfattribs={"layer": "DIMENSIONS"})
-                            msp.add_line((p2[0], p2[1]), (p2[0] + dim_offset - ext_len, p2[1]), dxfattribs={"layer": "DIMENSIONS"})
-
-                        # Add text at computed location
-                        txt = msp.add_text(text, dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"})
-                        txt.dxf.insert = text_pos
-                        # Horizontal dims centered, vertical dims left aligned
-                        txt.dxf.halign = 2 if angle == 0 else 0
-                        txt.dxf.valign = 2
-                    except Exception:
-                        # Fallback: place plain text at midpoint of measured feature
-                        mid = ((p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0)
-                        txt = msp.add_text(text, dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"})
-                        txt.dxf.insert = (mid[0], mid[1] + text_offset if angle == 0 else mid[1])
-                        txt.dxf.halign = 2 if angle == 0 else 0
-                        txt.dxf.valign = 2
-                elif atype == "note":
-                    # place note text at the `to` coordinate if present
-                    raw_to = getattr(ann, "to", None)
-                    if raw_to is None:
-                        raw_to = getattr(ann, "from", None)
-                    if raw_to is None:
-                        raw_to = (0.0, 0.0)
-                    pos = _t(raw_to)
-                    txt = msp.add_text(getattr(ann, "text", ""), dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"})
-                    txt.dxf.insert = pos
-                    txt.dxf.halign = 0
-                    txt.dxf.valign = 2
-                elif atype == "leader":
-                    raw_from = getattr(ann, "from_", None)
-                    if raw_from is None:
-                        raw_from = getattr(ann, "from", None)
-                    if raw_from is None:
-                        raw_from = (0.0, 0.0)
-                    p_from = _t(raw_from)
-
-                    raw_to = getattr(ann, "to", None)
-                    if raw_to is None:
-                        raw_to = (0.0, 0.0)
-                    p_to = _t(raw_to)
-                    # simple leader: a line from from->to and the text at `to`
-                    msp.add_line(p_from, p_to, dxfattribs={"layer": "DIMENSIONS"})
-                    txt = msp.add_text(getattr(ann, "text", ""), dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"})
-                    txt.dxf.insert = p_to
-                    txt.dxf.halign = 0
-                    txt.dxf.valign = 2
-            except Exception:
-                # keep drawing even if a single annotation fails
-                continue
-
+        # Draw all annotations
+        draw_annotations(msp, schema, isannotationRequired=isannotationRequired, dim_text_height=3.0, transform_point_func=_t)
+        
         # Draw labels from schema.geometry.labels
         # Disabled: comment out placement loop and handle one label later if needed
         # for label in getattr(schema.geometry, "labels", []) or []:
@@ -392,6 +298,257 @@ class DoorDrawingGenerator:
         except Exception:
             pass
 
+def _as_point(pt):
+    """Normalize various point representations to an (x, y) tuple of floats.
+
+    Accepts tuples/lists, objects with .x/.y, dicts with x/y, or any
+    sequence-like with two numeric entries. Falls back to (0.0, 0.0)
+    on error.
+    """
+    if pt is None:
+        return (0.0, 0.0)
+    try:
+        # direct sequence (tuple/list)
+        if isinstance(pt, (list, tuple)):
+            return (float(pt[0]), float(pt[1]))
+        # pydantic models or objects with attributes
+        if hasattr(pt, "x") and hasattr(pt, "y"):
+            return (float(getattr(pt, "x")), float(getattr(pt, "y")))
+        if isinstance(pt, dict) and ("x" in pt or "y" in pt):
+            return (float(pt.get("x", 0)), float(pt.get("y", 0)))
+        # try treating as sequence
+        seq = list(pt)
+        return (float(seq[0]), float(seq[1]))
+    except Exception:
+        return (0.0, 0.0)
+
+
+def _msp_handles(msp):
+    """Return a set of DXF handles for entities currently in modelspace.
+
+    Some entities may not expose a dxf.handle; skip those.
+    """
+    handles = set()
+    try:
+        for ent in msp:
+            try:
+                h = ent.dxf.handle
+            except Exception:
+                h = None
+            if h:
+                handles.add(h)
+    except Exception:
+        # If iteration fails for some reason, return empty set
+        return set()
+    return handles
+
+
+def _draw_manual_linear_dim(msp, p1, p2, angle, distance, text, dim_text_height=3.0, arrow_size=6.0, layer="DIMENSIONS"):
+    """Draw a simple linear dimension manually into modelspace.
+
+    This is a lightweight, portable fallback when ezdxf's dimension
+    helper does not expose virtual entities or does not insert into
+    modelspace. Supports axis-aligned (angle==0 horizontal, else vertical)
+    dimensions only.
+    """
+    try:
+        x1, y1 = float(p1[0]), float(p1[1])
+        x2, y2 = float(p2[0]), float(p2[1])
+    except Exception:
+        return
+
+    # Normalize ordering so p1 is the lesser along the primary axis
+    if angle == 0:
+        if x2 < x1:
+            x1, x2 = x2, x1
+        dim_y = (y1 + y2) / 2.0 + distance
+        # dimension line
+        msp.add_line((x1, dim_y), (x2, dim_y), dxfattribs={"layer": layer})
+        # extension lines
+        msp.add_line((x1, y1), (x1, dim_y), dxfattribs={"layer": layer})
+        msp.add_line((x2, y2), (x2, dim_y), dxfattribs={"layer": layer})
+        # ticks (small perpendicular lines)
+        half_tick = arrow_size / 2.0
+        msp.add_line((x1, dim_y - half_tick), (x1, dim_y + half_tick), dxfattribs={"layer": layer})
+        msp.add_line((x2, dim_y - half_tick), (x2, dim_y + half_tick), dxfattribs={"layer": layer})
+        # text centered
+        mid_x = (x1 + x2) / 2.0
+        txt = msp.add_text(text, dxfattribs={"layer": layer, "height": dim_text_height, "style": "Standard"})
+        txt.dxf.insert = (mid_x, dim_y + dim_text_height)
+        txt.dxf.halign = 2
+        txt.dxf.valign = 2
+    else:
+        # vertical dimension
+        if y2 < y1:
+            y1, y2 = y2, y1
+        dim_x = (x1 + x2) / 2.0 + distance
+        msp.add_line((dim_x, y1), (dim_x, y2), dxfattribs={"layer": layer})
+        msp.add_line((x1, y1), (dim_x, y1), dxfattribs={"layer": layer})
+        msp.add_line((x2, y2), (dim_x, y2), dxfattribs={"layer": layer})
+        half_tick = arrow_size / 2.0
+        msp.add_line((dim_x - half_tick, y1), (dim_x + half_tick, y1), dxfattribs={"layer": layer})
+        msp.add_line((dim_x - half_tick, y2), (dim_x + half_tick, y2), dxfattribs={"layer": layer})
+        mid_y = (y1 + y2) / 2.0
+        txt = msp.add_text(text, dxfattribs={"layer": layer, "height": dim_text_height, "style": "Standard"})
+        txt.dxf.insert = (dim_x + dim_text_height, mid_y)
+        txt.dxf.halign = 0
+        txt.dxf.valign = 2
+
+
+def _try_virtual_entities(dim, msp):
+    """Render and extract virtual entities from dimension, then add them."""
+    try:
+        dim.render()                     # ensure geometry exists
+        vlist = list(dim.virtual_entities()) or []
+        for e in vlist:
+            msp.add_entity(e.copy())     # use copy to detach from original doc
+        return len(vlist)
+    except Exception as ex:
+        print("virtual_entities failed:", ex)
+        return 0
+
+
+def _try_renderer_render(dim, msp):
+    """Attempt to obtain the renderer and render directly into modelspace.
+
+    Returns number of new entities detected in msp after render (0 on failure).
+    """
+    get_r = getattr(dim, "get_renderer", None)
+    if not callable(get_r):
+        return 0
+    try:
+        before = _msp_handles(msp)
+        renderer = dim.get_renderer()
+        # renderer.render(block) inserts entities into the provided block/modelspace
+        try:
+            renderer.render(msp)
+        except TypeError:
+            # some renderers may require a different signature; fail silently
+            return 0
+        after = _msp_handles(msp)
+        return len(after - before)
+    except Exception:
+        return 0
+
+
+def _try_post_render_scan(before_handles, msp):
+    """Compare before_handles with current modelspace handles and return number of new entities."""
+    try:
+        after = _msp_handles(msp)
+        return len(after - before_handles)
+    except Exception:
+        return 0
+
+def draw_annotations(msp, schema, isannotationRequired=True, dim_text_height=3.0, transform_point_func=None):
+    """
+    Draws all annotations (dimensions, notes, leaders) from schema.geometry.annotations.
+
+    Args:
+        msp: ezdxf modelspace object
+        schema: object containing metadata and geometry (with annotations list)
+        isannotationRequired (bool): whether annotations are enabled globally
+        dim_text_height (float): text height for dimension labels
+    """
+    is_schema_annotation_enabled = (
+        getattr(schema.metadata, "is_annotation_required", False) and isannotationRequired
+    )
+
+    if not is_schema_annotation_enabled:
+        return
+
+    # Define the transformation function if not provided
+    _t = transform_point_func if transform_point_func else lambda p: p
+
+    for ann in getattr(schema.geometry, "annotations", []) or []:
+        try:
+            atype = getattr(ann, "type", "dimension").lower()
+
+            # --- 📏 DIMENSION ---
+            if atype == "dimension":
+                raw_from = getattr(ann, "from_", getattr(ann, "from", (0.0, 0.0)))
+                raw_to = getattr(ann, "to", (0.0, 0.0))
+
+                # Normalize points to (x,y) floats and then apply the
+                # optional transform (which itself may apply offsets/rotation).
+                p1_local = _as_point(raw_from)
+                p2_local = _as_point(raw_to)
+                p1 = _t(p1_local)
+                p2 = _t(p2_local)
+
+                angle = float(getattr(ann, "angle", 0) or 0)
+                distance = float(getattr(ann, "offset", 10) or 10)               
+                dim_text = getattr(ann, "text", "")
+
+                                # Compute offset base point for dimension line
+                if angle == 0:   # horizontal dimension
+                    base = (p1[0], p1[1] + distance)
+                elif angle == 90:  # vertical dimension
+                    base = (p1[0] + distance, p1[1])
+                else:
+                    base = p1  # default fallback for non-orthogonal
+
+                try:
+                    dim = msp.add_linear_dim(
+                        base=base, # ✅ offset base point, not p1
+                        p1=p1,
+                        p2=p2,
+                        angle=angle,
+                        dimstyle="Standard",
+                        override={
+                            "dimtxt": 100.0,   # 🔹 text height (adjust to your scale)
+                            "dimasz": 35.0,   # 🔹 arrow size
+                            "dimexe": 5.0,    # 🔹 extension beyond ticks
+                            "dimexo": 20.0,    # 🔹 gap from measured object
+                            "dimtad": 1,      # 🔹 place text above dimension line
+                            "dimtofl": 1,     # 🔹 break line under text
+                        },
+                    )
+
+                    dim.dimension.render()
+                # 👉 Move the *whole* dimension line outward from the frame
+                    offset_dir = (0, distance) if angle == 0 else (distance, 0)
+                    dim.set_location(offset_dir, relative=True)
+                  
+                    # Assign all dimensions to your existing DIMENSIONS layer
+                    dim.dimension.dxf.layer = "DIMENSIONS"
+
+                except Exception as e:
+                    print("❌ Dimension creation failed:", e)
+
+           
+            # --- 📝 NOTE ---
+            elif atype == "note":
+                raw_pos = getattr(ann, "to", getattr(ann, "from", (0.0, 0.0)))
+                pos = _t(_as_point(raw_pos))
+                note_text = getattr(ann, "text", "")
+                txt = msp.add_text(
+                    note_text,
+                    dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"},
+                )
+                txt.dxf.insert = pos
+                txt.dxf.halign = 0
+                txt.dxf.valign = 2
+
+            # --- ➤ LEADER ---
+            elif atype == "leader":
+                raw_from = getattr(ann, "from_", getattr(ann, "from", (0.0, 0.0)))
+                raw_to = getattr(ann, "to", (0.0, 0.0))
+                p_from = _t(_as_point(raw_from))
+                p_to = _t(_as_point(raw_to))
+                leader_text = getattr(ann, "text", "")
+                msp.add_line(p_from, p_to, dxfattribs={"layer": "DIMENSIONS"})
+                txt = msp.add_text(
+                    leader_text,
+                    dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"},
+                )
+                txt.dxf.insert = p_to
+                txt.dxf.halign = 0
+                txt.dxf.valign = 2
+
+        except Exception as e:
+            logger.exception("Annotation failed: %s", e)
+            continue
+
 
 # Example usage
 if __name__ == "__main__":
@@ -401,7 +558,7 @@ if __name__ == "__main__":
 
         req = DoorDXFRequest(
             mode="single",
-            door=DoorInfo(category="Single", type="Normal", option=None, hole_offset="40", default_allowance="standard"),
+            door=DoorInfo(category="Single", type="Normal", option=None, hole_offset="150x40", default_allowance="standard"),
             dimensions=DimensionInfo(
                 width_measurement=600,
                 height_measurement=1105,

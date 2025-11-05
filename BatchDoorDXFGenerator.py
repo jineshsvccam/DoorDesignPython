@@ -8,7 +8,7 @@ Uses pandas to read Excel and DoorDrawingGenerator.generate_door_dxf for DXF cre
 import pandas as pd
 from DoorDrawingGenerator import DoorDrawingGenerator
 
-EXCEL_FILE = "Restructured_Door_Measurements.xlsx"
+EXCEL_FILE = "Restructured_Door_Measurements.xlsm"
 FIXED_PARAMS = {
     "door_minus_measurement_width": 68,
     "door_minus_measurement_height": 70,
@@ -39,7 +39,7 @@ def process_bins(rectangles, door_params_list, sheet_width: int = 1250, sheet_he
     # Flatten all placements for visualization
     all_placements = [p for bin_data in bins for p in bin_data["placements"]]
     # Uncomment to visualize placements during development
-    # visualize_placements(all_placements, sheet_width=sheet_width, sheet_height=sheet_height)
+    visualize_placements(all_placements, sheet_width=sheet_width, sheet_height=sheet_height)
 
     # Generate DXF for all bins and capture zip path returned by generator
     zip_path = generate_all_bins_dxf(

@@ -8,10 +8,16 @@ Uses ezdxf for DXF creation.
 
 from ezdxf.filemanagement import new
 from typing import Tuple, Optional, Union
+from collections.abc import Iterable
 from ezdxf.document import Drawing
 from ezdxf.layouts.layout import Modelspace
 from geometry.door_geometry import compute_door_geometry
 from fastapi_app.schemas_input import DoorDXFRequest
+from fastapi_app.schemas_output import SchemasOutput
+import logging
+from DoorDrawingPDF import DoorDrawingPDF
+
+logger = logging.getLogger(__name__)
 
 class DoorDrawingGenerator:
     """
@@ -21,7 +27,8 @@ class DoorDrawingGenerator:
 
     @staticmethod
     def generate_door_dxf(
-        request: DoorDXFRequest,  # expecting DoorDXFRequest pydantic model
+        request: Optional[DoorDXFRequest] = None,
+        schema: Optional[SchemasOutput] = None,
         file_name: Optional[str] = None,
         label_name: Optional[str] = None,
         isannotationRequired: bool = True,
@@ -29,7 +36,8 @@ class DoorDrawingGenerator:
         doc: Optional[Drawing] = None,
         msp: Optional[Modelspace] = None,
         save_file: bool = True,
-        rotated: bool = False
+        rotated: bool = False,
+        save_pdf: bool = False,
     ) -> None:
         """Generate a DXF file for the door with annotations.
 
@@ -37,103 +45,146 @@ class DoorDrawingGenerator:
         a new ezdxf document will be created. If `save_file` is True and
         `file_name` is provided the DXF will be saved.
         """
-        if doc is None and (file_name is None or not file_name.lower().endswith('.dxf')):
-            raise ValueError("Output file name must end with .dxf")
+        # Ensure we have either a schema or a request to compute one
+        if schema is None and request is None:
+            raise ValueError("Either 'request' or 'schema' must be provided to generate_door_dxf")
 
+        # If schema not provided, compute it from the request using the offset/rotated flags
+        if schema is None:
+            # request is Optional[DoorDXFRequest] at type-level, but we already
+            # validated above that at least one of request/schema is provided.
+            # Guard for the type-checker and runtime with an assertion.
+            assert request is not None, "request must be provided when schema is not"
+            schema = compute_door_geometry(request, rotated=rotated, offset=offset)
+
+        # Validate the computed / provided schema before drawing. Call the
+        # centralized `validate_schema(schema)` function in `tools.validator`.
+        # The validator performs all checks and prints a detailed JSON result
+        # if validation fails. If validator is unavailable or raises an
+        # exception we abort to avoid producing incorrect DXFs.
+        try:
+            try:
+                from tools.validator import validate_schema
+            except Exception:
+                import runpy, os
+                validator_path = os.path.join(os.path.dirname(__file__), "tools", "validator.py")
+                validator_ns = runpy.run_path(validator_path)
+                validate_schema = validator_ns.get("validate_schema")
+
+            if not validate_schema:
+                print("Validator not available; aborting DXF generation to avoid unsafe output.")
+                return
+
+            passed = bool(validate_schema(schema))
+            passed = True
+        except Exception as e:
+            try:
+                import traceback, json
+                err = {"validation_error": str(e), "traceback": traceback.format_exc()}
+                print(json.dumps(err, indent=2))
+            except Exception:
+                print("Validation failed and error details could not be serialized.")
+            return
+
+        if not passed:
+            # Validator already printed the detailed JSON; abort drawing.
+            return
+
+        # Ensure we have a drawing document and modelspace to draw into
         if doc is None or msp is None:
             doc = new(dxfversion="R2010")
-            doc.layers.new(name="CUT", dxfattribs={"color": 4})
-            doc.layers.new(name="DIMENSIONS", dxfattribs={"color": 1})
+            # create common layers if not present
+            try:
+                doc.layers.new(name="CUT", dxfattribs={"color": 4})
+            except Exception:
+                pass
+            try:
+                doc.layers.new(name="DIMENSIONS", dxfattribs={"color": 1})
+            except Exception:
+                pass
+            try:
+                doc.layers.new(name="BIN", dxfattribs={"color": 2})
+            except Exception:
+                pass
             msp = doc.modelspace()
 
-        # Compute geometry and load visual defaults
-        schema = compute_door_geometry(request, rotated=rotated, offset=offset)
-        defaults = request.defaults
-        dim_text_height = getattr(defaults, "dim_text_height", 8.0)
-        dim_arrow_size = getattr(defaults, "dim_arrow_size", 6.0)
-        horiz_dim_offset = getattr(defaults, "horizontal_dim_visual_offset", 20.0)
-        vert_dim_offset = getattr(defaults, "vertical_dim_visual_offset", 40.0)
+        # Visual defaults: prefer values from request.defaults if available
+        defaults = None
+        if request is not None:
+            defaults = getattr(request, "defaults", None)
+        dim_text_height = getattr(defaults, "dim_text_height", 8.0) if defaults is not None else 8.0
+        dim_arrow_size = getattr(defaults, "dim_arrow_size", 6.0) if defaults is not None else 6.0
+        horiz_dim_offset = getattr(defaults, "horizontal_dim_visual_offset", 20.0) if defaults is not None else 20.0
+        vert_dim_offset = getattr(defaults, "vertical_dim_visual_offset", 40.0) if defaults is not None else 40.0
+
+        # Determine placement offset from metadata (frames are returned
+        # normalized to local origin by compute_door_geometry). Apply the
+        # metadata offset when drawing so the DXF entities appear at the
+        # packer placement coordinates.
+        offs = getattr(schema.metadata, "offset", (0.0, 0.0)) or (0.0, 0.0)
+        def _t(p):
+            return (float(p[0]) + offs[0], float(p[1]) + offs[1])
 
         # Draw frames
         for frame in schema.geometry.frames:
-            pts = [tuple(p) for p in frame.points]
+            pts = [_t(p) for p in frame.points]
             msp.add_lwpolyline(pts, dxfattribs={"layer": frame.layer})
 
-        # Draw cutouts
+        # Draw cutouts (apply metadata offset)
         for cut in schema.geometry.cutouts:
-            pts = [tuple(p) for p in cut.points]
+            pts = [_t(p) for p in cut.points]
             msp.add_lwpolyline(pts, dxfattribs={"layer": cut.layer})
 
-        # Draw holes
+        # Draw holes (apply metadata offset)
         for hole in schema.geometry.holes:
-            msp.add_circle(tuple(hole.center), hole.radius, dxfattribs={"layer": hole.layer})
+            center = _t(hole.center)
+            msp.add_circle(center, hole.radius, dxfattribs={"layer": hole.layer})
 
-        # Draw dimensions and center label (combined, tolerant)
-        try:
-            outer = schema.geometry.frames[0].points
-
-            def as_2tuple(pt):
-                return (float(pt[0]), float(pt[1]))
-
-            DoorDrawingGenerator.add_dimension_line(
-                msp,
-                as_2tuple(outer[0]),
-                as_2tuple(outer[1]),
-                f"{int(round(schema.metadata.width))}",
-                offset=horiz_dim_offset,
-                angle=0,
-                isannotationRequired=isannotationRequired,
-                dim_text_height=dim_text_height,
-                dim_arrow_size=dim_arrow_size,
-            )
-
-            DoorDrawingGenerator.add_dimension_line(
-                msp,
-                as_2tuple(outer[0]),
-                as_2tuple(outer[3]),
-                f"{int(round(schema.metadata.height))}",
-                offset=vert_dim_offset,
-                angle=90,
-                isannotationRequired=isannotationRequired,
-                dim_text_height=dim_text_height,
-                dim_arrow_size=dim_arrow_size,
-            )
-
-            # center label using metadata (center point)
-            off_x, off_y = schema.metadata.offset
-            cx = off_x + (schema.metadata.width / 2.0)
-            cy = off_y + (schema.metadata.height / 2.0)
-            line_spacing = dim_text_height * 1.3
-            top_pos = (cx, cy + (line_spacing / 2.0))
-            bot_pos = (cx, cy - (line_spacing / 2.0))
-            line1 = schema.metadata.label or ""
-            line2 = f"{int(round(schema.metadata.width))} x {int(round(schema.metadata.height))}"
-
-            t1 = msp.add_text(line1, dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"})
-            t1.dxf.insert = top_pos
-            t1.dxf.halign = 2
-            t1.dxf.valign = 2
-            try:
-                t1.dxf.rotation = 90 if schema.metadata.rotated else 0
-            except Exception:
-                pass
-
-            t2 = msp.add_text(line2, dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"})
-            t2.dxf.insert = bot_pos
-            t2.dxf.halign = 2
-            t2.dxf.valign = 2
-            try:
-                t2.dxf.rotation = 90 if schema.metadata.rotated else 0
-            except Exception:
-                pass
-
-        except Exception:
-            pass
+        # Draw all annotations
+        draw_annotations(msp, schema, isannotationRequired=isannotationRequired, dim_text_height=3.0, transform_point_func=_t)
+        
+        # Draw labels from schema.geometry.labels
+        # Disabled: comment out placement loop and handle one label later if needed
+        # for label in getattr(schema.geometry, "labels", []) or []:
+        #     try:
+        #         ltype = getattr(label, "type", "center_label")
+        #         ltext = getattr(label, "text", "")
+        #         if ltype == "center_label":
+        #             # place centered text inside the door; build simple transform to account for metadata offset
+        #             offs = getattr(schema.metadata, "offset", (0.0, 0.0))
+        #             transform = lambda p: (p[0] + offs[0], p[1] + offs[1])
+        #             DoorDrawingGenerator.add_center_label(
+        #                 msp,
+        #                 transform,
+        #                 getattr(schema.metadata, "width", 0.0),
+        #                 getattr(schema.metadata, "height", 0.0),
+        #                 ltext,
+        #                 rotated,
+        #                 dim_text_height=dim_text_height,
+        #             )
+        #         else:
+        #             # Generic placement for corner or note labels at top-left
+        #             offs = getattr(schema.metadata, "offset", (0.0, 0.0))
+        #             top_left = (offs[0] + 10.0, offs[1] + max(getattr(schema.metadata, "height", 0.0) - 10.0, 10.0))
+        #             txt = msp.add_text(ltext, dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"})
+        #             txt.dxf.insert = top_left
+        #             txt.dxf.halign = 0
+        #             txt.dxf.valign = 2
+        #     except Exception:
+        #         continue
 
         # Save file only if requested
         if save_file and file_name is not None:
             doc.saveas(file_name)
             print(f"DXF file '{file_name}' created successfully.")
+
+            # If user also wants a PDF, generate it
+            if save_pdf:
+                try:
+                    pdf_name = file_name.replace(".dxf", ".pdf")
+                    DoorDrawingPDF.export_to_pdf(doc, pdf_name)
+                except Exception as e:
+                    print(f"Failed to export PDF: {e}")
 
     @staticmethod
     def add_dimension_line(
@@ -257,8 +308,254 @@ class DoorDrawingGenerator:
         except Exception:
             pass
 
+def _as_point(pt):
+    """Normalize various point representations to an (x, y) tuple of floats.
 
-# Example usage
+    Accepts tuples/lists, objects with .x/.y, dicts with x/y, or any
+    sequence-like with two numeric entries. Falls back to (0.0, 0.0)
+    on error.
+    """
+    if pt is None:
+        return (0.0, 0.0)
+    try:
+        # direct sequence (tuple/list)
+        if isinstance(pt, (list, tuple)):
+            return (float(pt[0]), float(pt[1]))
+        # pydantic models or objects with attributes
+        if hasattr(pt, "x") and hasattr(pt, "y"):
+            return (float(getattr(pt, "x")), float(getattr(pt, "y")))
+        if isinstance(pt, dict) and ("x" in pt or "y" in pt):
+            return (float(pt.get("x", 0)), float(pt.get("y", 0)))
+        # try treating as sequence
+        seq = list(pt)
+        return (float(seq[0]), float(seq[1]))
+    except Exception:
+        return (0.0, 0.0)
+
+
+def _msp_handles(msp):
+    """Return a set of DXF handles for entities currently in modelspace.
+
+    Some entities may not expose a dxf.handle; skip those.
+    """
+    handles = set()
+    try:
+        for ent in msp:
+            try:
+                h = ent.dxf.handle
+            except Exception:
+                h = None
+            if h:
+                handles.add(h)
+    except Exception:
+        # If iteration fails for some reason, return empty set
+        return set()
+    return handles
+
+
+def _draw_manual_linear_dim(msp, p1, p2, angle, distance, text, dim_text_height=3.0, arrow_size=6.0, layer="DIMENSIONS"):
+    """Draw a simple linear dimension manually into modelspace.
+
+    This is a lightweight, portable fallback when ezdxf's dimension
+    helper does not expose virtual entities or does not insert into
+    modelspace. Supports axis-aligned (angle==0 horizontal, else vertical)
+    dimensions only.
+    """
+    try:
+        x1, y1 = float(p1[0]), float(p1[1])
+        x2, y2 = float(p2[0]), float(p2[1])
+    except Exception:
+        return
+
+    # Normalize ordering so p1 is the lesser along the primary axis
+    if angle == 0:
+        if x2 < x1:
+            x1, x2 = x2, x1
+        dim_y = (y1 + y2) / 2.0 + distance
+        # dimension line
+        msp.add_line((x1, dim_y), (x2, dim_y), dxfattribs={"layer": layer})
+        # extension lines
+        msp.add_line((x1, y1), (x1, dim_y), dxfattribs={"layer": layer})
+        msp.add_line((x2, y2), (x2, dim_y), dxfattribs={"layer": layer})
+        # ticks (small perpendicular lines)
+        half_tick = arrow_size / 2.0
+        msp.add_line((x1, dim_y - half_tick), (x1, dim_y + half_tick), dxfattribs={"layer": layer})
+        msp.add_line((x2, dim_y - half_tick), (x2, dim_y + half_tick), dxfattribs={"layer": layer})
+        # text centered
+        mid_x = (x1 + x2) / 2.0
+        txt = msp.add_text(text, dxfattribs={"layer": layer, "height": dim_text_height, "style": "Standard"})
+        txt.dxf.insert = (mid_x, dim_y + dim_text_height)
+        txt.dxf.halign = 2
+        txt.dxf.valign = 2
+    else:
+        # vertical dimension
+        if y2 < y1:
+            y1, y2 = y2, y1
+        dim_x = (x1 + x2) / 2.0 + distance
+        msp.add_line((dim_x, y1), (dim_x, y2), dxfattribs={"layer": layer})
+        msp.add_line((x1, y1), (dim_x, y1), dxfattribs={"layer": layer})
+        msp.add_line((x2, y2), (dim_x, y2), dxfattribs={"layer": layer})
+        half_tick = arrow_size / 2.0
+        msp.add_line((dim_x - half_tick, y1), (dim_x + half_tick, y1), dxfattribs={"layer": layer})
+        msp.add_line((dim_x - half_tick, y2), (dim_x + half_tick, y2), dxfattribs={"layer": layer})
+        mid_y = (y1 + y2) / 2.0
+        txt = msp.add_text(text, dxfattribs={"layer": layer, "height": dim_text_height, "style": "Standard"})
+        txt.dxf.insert = (dim_x + dim_text_height, mid_y)
+        txt.dxf.halign = 0
+        txt.dxf.valign = 2
+
+
+def _try_virtual_entities(dim, msp):
+    """Render and extract virtual entities from dimension, then add them."""
+    try:
+        dim.render()                     # ensure geometry exists
+        vlist = list(dim.virtual_entities()) or []
+        for e in vlist:
+            msp.add_entity(e.copy())     # use copy to detach from original doc
+        return len(vlist)
+    except Exception as ex:
+        print("virtual_entities failed:", ex)
+        return 0
+
+
+def _try_renderer_render(dim, msp):
+    """Attempt to obtain the renderer and render directly into modelspace.
+
+    Returns number of new entities detected in msp after render (0 on failure).
+    """
+    get_r = getattr(dim, "get_renderer", None)
+    if not callable(get_r):
+        return 0
+    try:
+        before = _msp_handles(msp)
+        renderer = dim.get_renderer()
+        # renderer.render(block) inserts entities into the provided block/modelspace
+        try:
+            renderer.render(msp)
+        except TypeError:
+            # some renderers may require a different signature; fail silently
+            return 0
+        after = _msp_handles(msp)
+        return len(after - before)
+    except Exception:
+        return 0
+
+
+def _try_post_render_scan(before_handles, msp):
+    """Compare before_handles with current modelspace handles and return number of new entities."""
+    try:
+        after = _msp_handles(msp)
+        return len(after - before_handles)
+    except Exception:
+        return 0
+def draw_annotations(msp, schema, isannotationRequired=True, dim_text_height=3.0, transform_point_func=None):
+    """
+    Draws all annotations (dimensions, notes, leaders) from schema.geometry.annotations.
+
+    Args:
+        msp: ezdxf modelspace object
+        schema: object containing metadata and geometry (with annotations list)
+        isannotationRequired (bool): whether annotations are enabled globally
+        dim_text_height (float): text height for dimension labels
+    """
+    is_schema_annotation_enabled = (
+        getattr(schema.metadata, "is_annotation_required", False) and isannotationRequired
+    )
+
+    if not is_schema_annotation_enabled:
+        return
+
+    # Define the transformation function if not provided
+    _t = transform_point_func if transform_point_func else lambda p: p
+
+    # annotations are grouped in a dict: { category: [Annotation,...] }
+    anns_by_group = getattr(schema.geometry, "annotations", {}) or {}
+    for group_name, ann_list in (anns_by_group.items() if isinstance(anns_by_group, dict) else []):
+        for ann in ann_list or []:
+            try:
+                atype = getattr(ann, "type", "dimension").lower()
+
+                # --- 📏 DIMENSION ---
+                if atype == "dimension":
+                    raw_from = getattr(ann, "from_", getattr(ann, "from", (0.0, 0.0)))
+                    raw_to = getattr(ann, "to", (0.0, 0.0))
+
+                    # Normalize points and apply optional transform
+                    p1_local = _as_point(raw_from)
+                    p2_local = _as_point(raw_to)
+                    p1 = _t(p1_local)
+                    p2 = _t(p2_local)
+
+                    angle = float(getattr(ann, "angle", 0) or 0)
+                    distance = float(getattr(ann, "offset", 10) or 10)
+                    dim_text = getattr(ann, "text", "")
+
+                    # Compute offset base point for dimension line
+                    if angle == 0:   # horizontal
+                        base = (p1[0], p1[1] + distance)
+                    elif angle == 90:  # vertical
+                        base = (p1[0] + distance, p1[1])
+                    else:
+                        base = p1
+
+                    try:
+                        dim = msp.add_linear_dim(
+                            base=base,
+                            p1=p1,
+                            p2=p2,
+                            angle=angle,
+                            dimstyle="Standard",
+                            override={
+                                "dimtxt": 100.0,
+                                "dimasz": 35.0,
+                                "dimexe": 5.0,
+                                "dimexo": 20.0,
+                                "dimtad": 1,
+                                "dimtofl": 1,
+                            },
+                        )
+                        dim.dimension.render()
+                        offset_dir = (0, distance) if angle == 0 else (distance, 0)
+                        dim.set_location(offset_dir, relative=True)
+                        dim.dimension.dxf.layer = "DIMENSIONS"
+
+                    except Exception as e:
+                        print("❌ Dimension creation failed:", e)
+
+                # --- 📝 NOTE ---
+                elif atype == "note":
+                    raw_pos = getattr(ann, "to", getattr(ann, "from", (0.0, 0.0)))
+                    pos = _t(_as_point(raw_pos))
+                    note_text = getattr(ann, "text", "")
+                    txt = msp.add_text(
+                        note_text,
+                        dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"},
+                    )
+                    txt.dxf.insert = pos
+                    txt.dxf.halign = 0
+                    txt.dxf.valign = 2
+
+                # --- ➤ LEADER ---
+                elif atype == "leader":
+                    raw_from = getattr(ann, "from_", getattr(ann, "from", (0.0, 0.0)))
+                    raw_to = getattr(ann, "to", (0.0, 0.0))
+                    p_from = _t(_as_point(raw_from))
+                    p_to = _t(_as_point(raw_to))
+                    leader_text = getattr(ann, "text", "")
+                    msp.add_line(p_from, p_to, dxfattribs={"layer": "DIMENSIONS"})
+                    txt = msp.add_text(
+                        leader_text,
+                        dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"},
+                    )
+                    txt.dxf.insert = p_to
+                    txt.dxf.halign = 0
+                    txt.dxf.valign = 2
+
+            except Exception as e:
+                logger.exception("Annotation failed: %s", e)
+                continue
+
+   # Example usage
 if __name__ == "__main__":
     try:
         from fastapi_app.schemas_input import DoorDXFRequest, DoorInfo, DimensionInfo, DefaultInfo
@@ -266,11 +563,11 @@ if __name__ == "__main__":
 
         req = DoorDXFRequest(
             mode="single",
-            door=DoorInfo(category="Single", type="Normal", option=None, hole_offset="40", default_allowance="standard"),
+            door=DoorInfo(category="Single", type="Normal", option=None, hole_offset="150x40", default_allowance="standard"),
             dimensions=DimensionInfo(
                 width_measurement=600,
                 height_measurement=1105,
-                left_side_allowance_width=25,
+                left_side_allowance_width=25,               
                 right_side_allowance_width=25,
                 top_side_allowance_height=25,
                 bottom_side_allowance_height=0,
@@ -279,6 +576,7 @@ if __name__ == "__main__":
             defaults=DefaultInfo()
         )
 
-        DoorDrawingGenerator.generate_door_dxf(req, file_name="door_F14P2.dxf")
+        # save_pdf is a parameter on generate_door_dxf (not part of metadata)
+        DoorDrawingGenerator.generate_door_dxf(req, file_name="door_F14P2.dxf", save_pdf=False)
     except Exception as e:
         print(f"Error: {e}")

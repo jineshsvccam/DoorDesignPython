@@ -15,9 +15,35 @@ def generate_cutouts(params, frames, handles):
 
     # --- Glass cutouts (supports Option1..Option5 for fire doors) ---
     # Minimal, local-coordinate implementation using existing helpers.
-    inner_offset_x, inner_offset_y = frames["inner_offset"]
-    inner_width = params["inner_width"]
-    inner_height = params["inner_height"]
+    # Prefer reading inner bounds from the transformed/normalized inner frame
+    # Also read outer frame points and compute outer_height for use in
+    # top-margin calculations and fallbacks.
+    outer_pts = frames.get("outer") or []
+    if outer_pts:
+        xs_o = [p[0] for p in outer_pts]
+        ys_o = [p[1] for p in outer_pts]
+        outer_offset_x, outer_offset_y = min(xs_o), min(ys_o)
+        outer_width = max(xs_o) - outer_offset_x
+        outer_height = max(ys_o) - outer_offset_y
+    else:
+        outer_offset_x, outer_offset_y = frames.get("outer_offset", (0.0, 0.0))
+        outer_width = params.get("outer_width", 0.0)
+        outer_height = frames.get("outer_height", params.get("outer_height", 0.0))
+
+    inner_pts = frames.get("inner") or []
+    if inner_pts:
+        xs = [p[0] for p in inner_pts]
+        ys = [p[1] for p in inner_pts]
+        inner_offset_x, inner_offset_y = min(xs), min(ys)
+        inner_width = max(xs) - inner_offset_x
+        inner_height = max(ys) - inner_offset_y
+    else:
+        # Fallback to params when inner frame isn't available
+        inner_offset_x, inner_offset_y = frames.get("inner_offset", (0.0, 0.0))
+        inner_width = params.get("inner_width", 0.0)
+        inner_height = params.get("inner_height", 0.0)
+
+    inner_height = outer_height  # adjustment
     is_double = params.get("is_double", False)
     leaf_width = params.get("leaf_width", inner_width)
     shift_left = frames.get("shift_left", 0.0)
@@ -45,7 +71,11 @@ def generate_cutouts(params, frames, handles):
 
     # Helper collections
     glass_cutouts_to_add = []
-    add_standard_glass_cutout = True
+    # By default do not add a standard glass cutout. Enable it only for
+    # fire-door code paths that explicitly create `pts_box` (single-panel
+    # fire doors or other fire-specific branches). This prevents adding a
+    # glass cut for normal non-fire doors.
+    add_standard_glass_cutout = False
 
     # small rounded fallback radius
     rounded_radius = min(defaults.box_height / 2.0, defaults.box_width / 2.0)
@@ -169,6 +199,9 @@ def generate_cutouts(params, frames, handles):
         radius = min(getattr(defaults, "glass_corner_radius", rounded_radius), glass_w / 2.0 if glass_w else 0.0, glass_h / 2.0 if glass_h else 0.0)
         pts_box = create_rounded_rect(glass_left, glass_bottom, glass_w, glass_h, radius, segments=getattr(defaults, "glass_segments", 8))
         pts_box = dedupe_consecutive_points(pts_box)
+        # Mark that we should add the standard glass cutout for this
+        # fire-door single-panel case.
+        add_standard_glass_cutout = True
 
     # Double-door Option5: four panels
     elif is_double and _eq_str(door_info.type, "fire") and opt_normalized == "Option5":

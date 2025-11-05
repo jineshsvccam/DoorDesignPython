@@ -1,24 +1,165 @@
 import os
 import shutil
+from pathlib import Path
 from ezdxf.filemanagement import new
 from DoorDrawingGenerator import DoorDrawingGenerator
+from geometry.door_geometry import compute_door_geometry
+from fastapi_app.schemas_output import BinDoor, BinManifest, BinDoorTransformed, BinTransformedManifest
+from fastapi_app.schemas_input import DoorDXFRequest
+from BatchGenerator import BatchGenerator
 
 
-def generate_bin_dxf(sheet_width, sheet_height, doors, placements, file_name, isannotationRequired=True):
+def _normalize_request_dict(req):
+    """Return a dict representation of a request object (pydantic model or dict).
+
+    Tries pydantic v2 `model_dump`, falls back to `dict()` (v1), then to the raw dict.
+    Returns an empty dict if normalization fails or req is None.
     """
-    Generates a DXF file for a bin (sheet) with multiple doors placed at specified offsets.
+    if req is None:
+        return {}
+    # pydantic v2
+    if hasattr(req, "model_dump"):
+        try:
+            return req.model_dump()
+        except Exception:
+            pass
+    # pydantic v1
+    if hasattr(req, "dict"):
+        try:
+            return req.dict()
+        except Exception:
+            pass
+    # if it's already a dict
+    if isinstance(req, dict):
+        return req
+    # fallback
+    try:
+        return dict(req)
+    except Exception:
+        return {}
 
-    Args:
-        sheet_width: Width of the bin/sheet.
-        sheet_height: Height of the bin/sheet.
-        doors: List of dicts, each containing door parameters for DoorDrawingGenerator.generate_door_dxf.
-        placements: List of placement dicts (or None) for each door. Expected keys: 'x','y', optional 'rotated'.
-        file_name: Output DXF file name for the bin.
-        isannotationRequired: Whether to annotate dimensions.
+
+def _safe_model_dump(obj):
+    """Return a JSON-serializable dict for a pydantic model or dict, or None."""
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        return obj
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump()
+        except Exception:
+            pass
+    if hasattr(obj, "dict"):
+        try:
+            return obj.dict()
+        except Exception:
+            pass
+    try:
+        return dict(obj)
+    except Exception:
+        return None
+
+
+def _write_manifest_atomic(path: Path, manifest_obj):
+    """Write a pydantic manifest to path atomically with a small fallback."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        try:
+            # Use aliases when dumping so fields like Annotation.from_ are
+            # serialized as the JSON key "from" which matches the pydantic
+            # model aliases and allows parsing the manifest back later.
+            payload = manifest_obj.model_dump_json(indent=2, by_alias=True)
+        except Exception:
+            try:
+                payload = manifest_obj.json(indent=2, by_alias=True)
+            except Exception:
+                payload = str(manifest_obj)
+
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+        os.replace(tmp, path)
+    except Exception:
+        # fallback non-atomic write
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+
+
+def create_and_write_bin_manifest(index, bin_data, door_params_list, sheet_width, sheet_height, output_dir):
+    """Create a BinTransformedManifest for a single bin and write it to JSON.
+
+    Returns (transformed_json_path, transformed_manifest).
     """
-    if sheet_width <= 0 or sheet_height <= 0:
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    placements = bin_data.get("placements", [])
+    doors_transformed = []
+
+    for placement in placements:
+        file_name = placement.get("file_name") if isinstance(placement, dict) else None
+        door_params = next((d for d in door_params_list if d.get("file_name") == file_name), None)
+        if not door_params:
+            continue
+
+        req = door_params.get("request")
+        req_dict = _normalize_request_dict(req)
+        placement_tuple = (placement.get("x", 0), placement.get("y", 0))
+        rotated = bool(placement.get("rotated", False))
+
+        # Attempt to parse request into DoorDXFRequest (if dict) or use model
+        req_obj = None
+        if isinstance(req, dict):
+            try:
+                req_obj = DoorDXFRequest.parse_obj(req)
+            except Exception:
+                req_obj = None
+        else:
+            req_obj = req
+
+        original_response = None
+        transformed = None
+        if req_obj is not None:
+            try:
+                # compute both geometries in a single try/except block
+                original_response = compute_door_geometry(req_obj, rotated=False, offset=(0.0, 0.0))
+                transformed = compute_door_geometry(req_obj, rotated=rotated, offset=placement_tuple)
+            except Exception as e:
+                print(f"[WARN] Failed to compute geometry for '{file_name}': {e}")
+
+        # Safe original_request dict (single helper)
+        orig_req = _safe_model_dump(req_obj) or req_dict or None
+
+        bd_t = BinDoorTransformed(
+            file_name=file_name,
+            original_request=orig_req,
+            placement=placement_tuple,
+            rotated=rotated,
+            transformed=transformed,
+            original_response=original_response,
+        )
+        doors_transformed.append(bd_t)
+
+    # Build and write only the transformed manifest (contains full details)
+    transformed_manifest = BinTransformedManifest(sheet_width=sheet_width, sheet_height=sheet_height, doors=doors_transformed)
+    transformed_json_path = out_dir.joinpath(f"bin_{index+1}_transformed.json")
+    _write_manifest_atomic(transformed_json_path, transformed_manifest)
+
+    return str(transformed_json_path), transformed_manifest
+
+
+def generate_bin_dxf(sheet_w, sheet_h, doors_for_generator, placements, out_dxf, isannotationRequired=True):
+    """Generate a DXF for a bin using precomputed transformed SchemasOutput values.
+
+    This function does not recompute geometry. It uses the `transformed` entry
+    present on each door dict in `doors_for_generator` and asks
+    DoorDrawingGenerator to draw that schema directly into the shared DXF
+    document. The transformed schema is expected to already contain the
+    correct metadata.offset (packer placement coordinates).
+    """
+    if sheet_w <= 0 or sheet_h <= 0:
         raise ValueError("Sheet dimensions must be positive numbers.")
-    if not file_name.lower().endswith('.dxf'):
+    if not out_dxf.lower().endswith('.dxf'):
         raise ValueError("Output file name must end with .dxf")
 
     # Create DXF document
@@ -30,104 +171,72 @@ def generate_bin_dxf(sheet_width, sheet_height, doors, placements, file_name, is
 
     # Draw bin boundary
     msp.add_lwpolyline(
-        [(0, 0), (sheet_width, 0), (sheet_width, sheet_height), (0, sheet_height), (0, 0)],
+        [(0, 0), (sheet_w, 0), (sheet_w, sheet_h), (0, sheet_h), (0, 0)],
         dxfattribs={"layer": "BIN"}
     )
 
-    # Draw each door in the bin
-    allowed_keys = [
-        'width_measurement', 'height_measurement',
-        'left_side_allowance_width', 'right_side_allowance_width',
-        'left_side_allowance_height', 'right_side_allowance_height',
-        'door_minus_measurement_width', 'door_minus_measurement_height',
-        'bending_width', 'bending_height',
-        'file_name', 'isannotationRequired', 'offset', 'doc', 'msp', 'save_file', 'label_name'
-    ]
-
-    for door_params, placement in zip(doors, placements):
-        rotated = False
-        if isinstance(placement, dict):
-            x = placement.get('x', 0) or 0
-            y = placement.get('y', 0) or 0
-            rotated = bool(placement.get('rotated', False))
-            offset = (x, y)
+    # Draw each door using the precomputed transformed schema.
+    for door, placement in zip(doors_for_generator, placements):
+        transformed = None
+        file_label = None
+        if isinstance(door, dict):
+            transformed = door.get('transformed')
+            file_label = door.get('file_name')
         else:
-            offset = (0, 0)
+            # if a non-dict entry is passed, assume it is already a transformed schema
+            transformed = door
 
-        params = {k: v for k, v in dict(door_params).items() if k in allowed_keys}
-        params.update({
-            'file_name': None,
-            'isannotationRequired': isannotationRequired,
-            'offset': offset,
-            'doc': doc,
-            'msp': msp,
-            'save_file': False
-        })
-        # supply a label_name so the generator can draw file name text even when
-        # file saving is disabled (file_name=None)
-        params['label_name'] = door_params.get('file_name')
+        if transformed is None:
+            print(f"[WARN] No transformed schema for door '{file_label}' - skipping")
+            continue
 
-        # Pass rotated flag to DoorDrawingGenerator which will handle coordinate transforms.
-        params['rotated'] = rotated
-        # Debug print of key parameters before drawing
-        dbg_keys = [
-            'width_measurement', 'height_measurement',
-            'left_side_allowance_width', 'right_side_allowance_width',
-            'left_side_allowance_height', 'right_side_allowance_height',
-            'door_minus_measurement_width', 'door_minus_measurement_height',
-            'bending_width', 'bending_height'
-        ]
-        dbg_vals = {k: params.get(k) for k in dbg_keys}
-        print(f"[DEBUG bin_dxf] file={door_params.get('file_name')} rotated={rotated} offset={offset} params={dbg_vals}")
-        DoorDrawingGenerator.generate_door_dxf(**params)
+        # rotated flag may be present in placement; pass it through if available
+        rotated_flag = False
+        if isinstance(placement, dict):
+            rotated_flag = bool(placement.get('rotated', False))
 
-    doc.saveas(file_name)
-    print(f" Bin DXF file '{file_name}' created successfully.")
+        # Draw using DoorDrawingGenerator with the precomputed schema
+        DoorDrawingGenerator.generate_door_dxf(
+            request=door.get('request') if isinstance(door, dict) else None,
+            schema=transformed,
+            file_name=None,
+            label_name=file_label,
+            isannotationRequired=isannotationRequired,
+            doc=doc,
+            msp=msp,
+            save_file=False,
+            rotated=rotated_flag,
+        )
+
+    doc.saveas(out_dxf)
+    print(f" Bin DXF file '{out_dxf}' created successfully.")
 
 
 def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isannotationRequired=True):
-    """
-    Loops through bins and generates a DXF file for each bin.
-
-    Args:
-        sheet_width: Width of the bin/sheet.
-        sheet_height: Height of the bin/sheet.
-        bins: List of bins, each with placements.
-        door_params_list: List of all door parameter dicts.
-        isannotationRequired: Whether to annotate dimensions.
-    """
+   
     script_dir = os.path.dirname(os.path.abspath(__file__))
     output_dir = os.path.join(script_dir, 'output')
     os.makedirs(output_dir, exist_ok=True)
 
+    bg = BatchGenerator(sheet_width=sheet_width, sheet_height=sheet_height, output_dir=output_dir)
+    generated_dxf_paths = []
+
     for i, bin_data in enumerate(bins):
-        placements = bin_data.get("placements", [])
-        doors_in_bin = []
-        offsets_in_bin = []
+        json_path, transformed_manifest = create_and_write_bin_manifest(i, bin_data, door_params_list, sheet_width, sheet_height, output_dir)
 
-        for placement in placements:
-            file_name = placement.get("file_name") if isinstance(placement, dict) else None
-            door_params = next((d for d in door_params_list if d.get("file_name") == file_name), None)
-            if door_params:
-                doors_in_bin.append(door_params)
-                offsets_in_bin.append(placement if isinstance(placement, dict) else None)
+        dxf_path = bg.generate_dxf_for_bin_json(json_path, isannotationRequired=isannotationRequired)
+        if dxf_path:
+            generated_dxf_paths.append(dxf_path)
+            print(f"Bin {i+1} DXF generated: {dxf_path}")
+        else:
+            print(f"Bin {i+1} DXF generation failed for manifest: {json_path}")
 
-        output_file = os.path.join(output_dir, f"bin_{i+1}.dxf")
-        generate_bin_dxf(sheet_width, sheet_height, doors_in_bin, offsets_in_bin, output_file, isannotationRequired)
-
-        print(f"Bin {i+1} DXF '{output_file}' generation complete.")
-
-    print(" All bins generated successfully.")
-
-    # --- Create ZIP file of all generated DXFs ---
     zip_path = os.path.join(script_dir, "output_bins.zip")
-    # shutil.make_archive expects the base name without extension
     base_name = os.path.splitext(zip_path)[0]
     try:
         shutil.make_archive(base_name, "zip", output_dir)
-        print(f"ZIP file created at: {zip_path}")
+        print(f"ZIP created: {zip_path}")
         return zip_path
     except Exception as e:
         print(f"Failed to create ZIP archive: {e}")
-        # Still return None to indicate failure to create archive
         return None

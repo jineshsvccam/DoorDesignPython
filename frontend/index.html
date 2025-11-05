@@ -173,9 +173,24 @@
         <div id="bulkInputs" class="hidden">
           <h4>Bulk DXF Generation</h4>
           <label>Upload Excel File</label>
-          <input type="file" id="excelFile" name="excelFile" accept=".xlsx" />
+          <input
+            type="file"
+            id="excelFile"
+            name="excelFile"
+            accept=".xlsx,.xlsm"
+          />
+          <div class="mt">
+            <label>Sheet Size</label>
+            <select id="sheetSize" name="sheet_size" class="field">
+              <option value="1250x2500">1250 × 2500 mm</option>
+              <option value="1250x3050">1250 × 3050 mm</option>
+              <option value="1500x3050">1500 × 3050 mm</option>
+            </select>
+          </div>
           <small class="note">
-            📊 Excel should contain required columns for door generation.
+            📊 Excel should contain required columns for door generation. You
+            can download a sample Excel template
+            <a href="/static/sample_door_template.xlsm" download>here</a>.
           </small>
         </div>
 

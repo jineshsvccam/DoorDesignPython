@@ -24,6 +24,7 @@ const verticalAllowancesHeader = document.getElementById(
 const verticalAllowanceInputs = document.getElementById(
   "verticalAllowanceInputs"
 );
+const sheetSize = document.getElementById("sheetSize");
 
 let currentMode = "single";
 let touchStartX = 0;
@@ -485,6 +486,10 @@ form.addEventListener("submit", async (e) => {
 
     const formData = new FormData();
     formData.append("file", excelInput.files[0]);
+    // include selected sheet size (format: WIDTHxHEIGHT, e.g. "1250x2500")
+    if (sheetSize && sheetSize.value) {
+      formData.append("sheet_size", sheetSize.value);
+    }
 
     try {
       const response = await fetch("/generate-dxf/", {

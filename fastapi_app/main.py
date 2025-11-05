@@ -1,8 +1,9 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Form
 from fastapi.responses import FileResponse
 import asyncio
 import tempfile, os, sys
 from pathlib import Path
+import re
 
 # --- Add this to ensure imports work correctly ---
 # If your main FastAPI app is under /fastapi_app and BatchDoorDXFGenerator.py is in parent folder
@@ -55,22 +56,47 @@ app.add_middleware(
 )
 
 @app.post("/generate-dxf/")
-async def generate_dxf(file: UploadFile = File(...)):
-    # Save uploaded Excel temporarily
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+async def generate_dxf(
+    file: UploadFile = File(...),
+    sheet_size: Optional[str] = Form("1250x2500"),
+):
+    """Accept an uploaded Excel file and an optional sheet_size form field.
+
+    `sheet_size` should be of the form WIDTHxHEIGHT (e.g. 1250x2500). If the
+    value is missing or cannot be parsed, defaults of 1250x2500 are used.
+    """
+    # Save uploaded Excel temporarily. Use the uploaded filename's suffix when available
+    suffix = Path(file.filename).suffix if file.filename else ".xlsx"
+    if not suffix or not suffix.startswith("."):
+        suffix = ".xlsx"
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(await file.read())
         excel_path = tmp.name
 
     try:
+        # parse sheet_size into width & height (allow separators like x, X, *, ×)
+        width = 1250
+        height = 2500
+        if sheet_size:
+            nums = re.findall(r"(\d+)", sheet_size)
+            if len(nums) >= 2:
+                try:
+                    width = int(nums[0])
+                    height = int(nums[1])
+                except ValueError:
+                    # keep defaults if parsing fails
+                    pass
+
         # Call your existing helper that generates the ZIP
-        zip_path = generate_zip_from_excel(excel_path)
+        zip_path = generate_zip_from_excel(excel_path, sheet_width=width, sheet_height=height)
         if not zip_path or not os.path.exists(zip_path):
             raise HTTPException(status_code=500, detail="Failed to generate DXF ZIP archive")
 
         return FileResponse(
             path=zip_path,
             filename=os.path.basename(zip_path),
-            media_type="application/zip"
+            media_type="application/zip",
         )
     finally:
         # Clean up temp Excel file

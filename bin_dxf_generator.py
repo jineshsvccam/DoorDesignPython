@@ -1,5 +1,6 @@
 import os
 import shutil
+import zipfile
 from pathlib import Path
 from ezdxf.filemanagement import new
 from DoorDrawingGenerator import DoorDrawingGenerator
@@ -216,7 +217,19 @@ def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isa
    
     script_dir = os.path.dirname(os.path.abspath(__file__))
     output_dir = os.path.join(script_dir, 'output')
-    os.makedirs(output_dir, exist_ok=True)
+    # Ensure output directory exists and is empty before generating new files
+    if os.path.exists(output_dir):
+        # remove all contents inside output_dir (files and subdirectories)
+        for entry in Path(output_dir).iterdir():
+            try:
+                if entry.is_dir():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+            except Exception as e:
+                print(f"[WARN] Failed to remove '{entry}': {e}")
+    else:
+        os.makedirs(output_dir, exist_ok=True)
 
     bg = BatchGenerator(sheet_width=sheet_width, sheet_height=sheet_height, output_dir=output_dir)
     generated_dxf_paths = []
@@ -231,10 +244,17 @@ def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isa
         else:
             print(f"Bin {i+1} DXF generation failed for manifest: {json_path}")
 
+    # Create ZIP archive containing only .dxf files from the output directory
     zip_path = os.path.join(script_dir, "output_bins.zip")
-    base_name = os.path.splitext(zip_path)[0]
     try:
-        shutil.make_archive(base_name, "zip", output_dir)
+        with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+            for root, _, files in os.walk(output_dir):
+                for f in files:
+                    if f.lower().endswith('.dxf'):
+                        full = os.path.join(root, f)
+                        # store files with a relative path inside the archive
+                        arcname = os.path.relpath(full, output_dir)
+                        zf.write(full, arcname)
         print(f"ZIP created: {zip_path}")
         return zip_path
     except Exception as e:

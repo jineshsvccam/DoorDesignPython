@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Tuple, Literal
+from typing import List, Optional, Tuple, Literal, Dict
 
 
 # ---------- Supporting Models ----------
@@ -44,6 +44,9 @@ class Annotation(BaseModel):
     offset: float = 0.0
     angle: float = 0.0
     text_offset: Optional[float] = None
+    # optional classification to help group and identify annotations
+    category: Optional[str] = None
+    owner: Optional[str] = None
 
 
 class Label(BaseModel):
@@ -58,7 +61,11 @@ class Geometry(BaseModel):
     frames: List[Frame] = []
     cutouts: List[Cutout] = []
     holes: List[Hole] = []
-    annotations: List[Annotation] = []
+    # annotations are grouped by logical category (e.g. "frames", "glass_cut",
+    # "keybox", "holes", "frame_gaps"). Each value is a list of Annotation
+    # objects belonging to that category. This makes it easy for consumers to
+    # present annotations grouped under headings.
+    annotations: Dict[str, List[Annotation]] = {}
     labels: List[Label] = []
 
 

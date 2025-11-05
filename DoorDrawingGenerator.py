@@ -438,7 +438,6 @@ def _try_post_render_scan(before_handles, msp):
         return len(after - before_handles)
     except Exception:
         return 0
-
 def draw_annotations(msp, schema, isannotationRequired=True, dim_text_height=3.0, transform_point_func=None):
     """
     Draws all annotations (dimensions, notes, leaders) from schema.geometry.annotations.
@@ -459,98 +458,94 @@ def draw_annotations(msp, schema, isannotationRequired=True, dim_text_height=3.0
     # Define the transformation function if not provided
     _t = transform_point_func if transform_point_func else lambda p: p
 
-    for ann in getattr(schema.geometry, "annotations", []) or []:
-        try:
-            atype = getattr(ann, "type", "dimension").lower()
+    # annotations are grouped in a dict: { category: [Annotation,...] }
+    anns_by_group = getattr(schema.geometry, "annotations", {}) or {}
+    for group_name, ann_list in (anns_by_group.items() if isinstance(anns_by_group, dict) else []):
+        for ann in ann_list or []:
+            try:
+                atype = getattr(ann, "type", "dimension").lower()
 
-            # --- 📏 DIMENSION ---
-            if atype == "dimension":
-                raw_from = getattr(ann, "from_", getattr(ann, "from", (0.0, 0.0)))
-                raw_to = getattr(ann, "to", (0.0, 0.0))
+                # --- 📏 DIMENSION ---
+                if atype == "dimension":
+                    raw_from = getattr(ann, "from_", getattr(ann, "from", (0.0, 0.0)))
+                    raw_to = getattr(ann, "to", (0.0, 0.0))
 
-                # Normalize points to (x,y) floats and then apply the
-                # optional transform (which itself may apply offsets/rotation).
-                p1_local = _as_point(raw_from)
-                p2_local = _as_point(raw_to)
-                p1 = _t(p1_local)
-                p2 = _t(p2_local)
+                    # Normalize points and apply optional transform
+                    p1_local = _as_point(raw_from)
+                    p2_local = _as_point(raw_to)
+                    p1 = _t(p1_local)
+                    p2 = _t(p2_local)
 
-                angle = float(getattr(ann, "angle", 0) or 0)
-                distance = float(getattr(ann, "offset", 10) or 10)               
-                dim_text = getattr(ann, "text", "")
+                    angle = float(getattr(ann, "angle", 0) or 0)
+                    distance = float(getattr(ann, "offset", 10) or 10)
+                    dim_text = getattr(ann, "text", "")
 
-                                # Compute offset base point for dimension line
-                if angle == 0:   # horizontal dimension
-                    base = (p1[0], p1[1] + distance)
-                elif angle == 90:  # vertical dimension
-                    base = (p1[0] + distance, p1[1])
-                else:
-                    base = p1  # default fallback for non-orthogonal
+                    # Compute offset base point for dimension line
+                    if angle == 0:   # horizontal
+                        base = (p1[0], p1[1] + distance)
+                    elif angle == 90:  # vertical
+                        base = (p1[0] + distance, p1[1])
+                    else:
+                        base = p1
 
-                try:
-                    dim = msp.add_linear_dim(
-                        base=base, # ✅ offset base point, not p1
-                        p1=p1,
-                        p2=p2,
-                        angle=angle,
-                        dimstyle="Standard",
-                        override={
-                            "dimtxt": 100.0,   # 🔹 text height (adjust to your scale)
-                            "dimasz": 35.0,   # 🔹 arrow size
-                            "dimexe": 5.0,    # 🔹 extension beyond ticks
-                            "dimexo": 20.0,    # 🔹 gap from measured object
-                            "dimtad": 1,      # 🔹 place text above dimension line
-                            "dimtofl": 1,     # 🔹 break line under text
-                        },
+                    try:
+                        dim = msp.add_linear_dim(
+                            base=base,
+                            p1=p1,
+                            p2=p2,
+                            angle=angle,
+                            dimstyle="Standard",
+                            override={
+                                "dimtxt": 100.0,
+                                "dimasz": 35.0,
+                                "dimexe": 5.0,
+                                "dimexo": 20.0,
+                                "dimtad": 1,
+                                "dimtofl": 1,
+                            },
+                        )
+                        dim.dimension.render()
+                        offset_dir = (0, distance) if angle == 0 else (distance, 0)
+                        dim.set_location(offset_dir, relative=True)
+                        dim.dimension.dxf.layer = "DIMENSIONS"
+
+                    except Exception as e:
+                        print("❌ Dimension creation failed:", e)
+
+                # --- 📝 NOTE ---
+                elif atype == "note":
+                    raw_pos = getattr(ann, "to", getattr(ann, "from", (0.0, 0.0)))
+                    pos = _t(_as_point(raw_pos))
+                    note_text = getattr(ann, "text", "")
+                    txt = msp.add_text(
+                        note_text,
+                        dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"},
                     )
+                    txt.dxf.insert = pos
+                    txt.dxf.halign = 0
+                    txt.dxf.valign = 2
 
-                    dim.dimension.render()
-                # 👉 Move the *whole* dimension line outward from the frame
-                    offset_dir = (0, distance) if angle == 0 else (distance, 0)
-                    dim.set_location(offset_dir, relative=True)
-                  
-                    # Assign all dimensions to your existing DIMENSIONS layer
-                    dim.dimension.dxf.layer = "DIMENSIONS"
+                # --- ➤ LEADER ---
+                elif atype == "leader":
+                    raw_from = getattr(ann, "from_", getattr(ann, "from", (0.0, 0.0)))
+                    raw_to = getattr(ann, "to", (0.0, 0.0))
+                    p_from = _t(_as_point(raw_from))
+                    p_to = _t(_as_point(raw_to))
+                    leader_text = getattr(ann, "text", "")
+                    msp.add_line(p_from, p_to, dxfattribs={"layer": "DIMENSIONS"})
+                    txt = msp.add_text(
+                        leader_text,
+                        dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"},
+                    )
+                    txt.dxf.insert = p_to
+                    txt.dxf.halign = 0
+                    txt.dxf.valign = 2
 
-                except Exception as e:
-                    print("❌ Dimension creation failed:", e)
+            except Exception as e:
+                logger.exception("Annotation failed: %s", e)
+                continue
 
-           
-            # --- 📝 NOTE ---
-            elif atype == "note":
-                raw_pos = getattr(ann, "to", getattr(ann, "from", (0.0, 0.0)))
-                pos = _t(_as_point(raw_pos))
-                note_text = getattr(ann, "text", "")
-                txt = msp.add_text(
-                    note_text,
-                    dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"},
-                )
-                txt.dxf.insert = pos
-                txt.dxf.halign = 0
-                txt.dxf.valign = 2
-
-            # --- ➤ LEADER ---
-            elif atype == "leader":
-                raw_from = getattr(ann, "from_", getattr(ann, "from", (0.0, 0.0)))
-                raw_to = getattr(ann, "to", (0.0, 0.0))
-                p_from = _t(_as_point(raw_from))
-                p_to = _t(_as_point(raw_to))
-                leader_text = getattr(ann, "text", "")
-                msp.add_line(p_from, p_to, dxfattribs={"layer": "DIMENSIONS"})
-                txt = msp.add_text(
-                    leader_text,
-                    dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"},
-                )
-                txt.dxf.insert = p_to
-                txt.dxf.halign = 0
-                txt.dxf.valign = 2
-
-        except Exception as e:
-            logger.exception("Annotation failed: %s", e)
-            continue
-
-
-# Example usage
+   # Example usage
 if __name__ == "__main__":
     try:
         from fastapi_app.schemas_input import DoorDXFRequest, DoorInfo, DimensionInfo, DefaultInfo
@@ -562,7 +557,7 @@ if __name__ == "__main__":
             dimensions=DimensionInfo(
                 width_measurement=600,
                 height_measurement=1105,
-                left_side_allowance_width=25,
+                left_side_allowance_width=25,               
                 right_side_allowance_width=25,
                 top_side_allowance_height=25,
                 bottom_side_allowance_height=0,

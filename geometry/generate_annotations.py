@@ -1,4 +1,4 @@
-from typing import List, Tuple, Any
+from typing import List, Tuple, Any, Dict, Optional
 from fastapi_app.schemas_output import Annotation
 
 
@@ -67,6 +67,8 @@ def _frame_dimensions_annotations(frame: Any, offset_base: float = 10.0, placeme
         "text": w_text,
         "offset": w_offset,
         "angle": w_angle,
+        "category": "frame",
+        "owner": _get_name(frame) or "frame",
     })
 
     height_ann = Annotation.parse_obj({
@@ -76,6 +78,8 @@ def _frame_dimensions_annotations(frame: Any, offset_base: float = 10.0, placeme
         "text": h_text,
         "offset": h_offset,
         "angle": h_angle,
+        "category": "frame",
+        "owner": _get_name(frame) or "frame",
     })
 
     return [width_ann, height_ann]
@@ -102,6 +106,8 @@ def _cutout_dimensions_annotations(cutout: Any, left_frame: Any = None, offset_b
         "text": w_text,
         "offset": -offset_base,
         "angle": 0.0,
+        "category": "cutout",
+        "owner": _get_name(cutout) or "cutout",
     })
 
     height_ann = Annotation.parse_obj({
@@ -111,6 +117,8 @@ def _cutout_dimensions_annotations(cutout: Any, left_frame: Any = None, offset_b
         "text": h_text,
         "offset": -offset_base,
         "angle": 90.0,
+        "category": "cutout",
+        "owner": _get_name(cutout) or "cutout",
     })
 
     anns = [width_ann, height_ann]
@@ -129,6 +137,8 @@ def _cutout_dimensions_annotations(cutout: Any, left_frame: Any = None, offset_b
                     "text": f"G {gap}",
                     "offset": -offset_base,
                     "angle": 0.0,
+                    "category": "cutout",
+                    "owner": _get_name(cutout) or "cutout",
                 }))
 
     return anns
@@ -185,6 +195,8 @@ def _glass_cut_annotations(cutout: Any, inner_frame: Any, outer_frame: Any, offs
                 "text": f"G {gap_left}",
                 "offset": -offset_base,
                 "angle": 0.0,
+                "category": "glass_cut",
+                "owner": _get_name(cutout) or "glass_cut",
             }))
 
     # Right gap from cutout right -> inner_right
@@ -198,6 +210,8 @@ def _glass_cut_annotations(cutout: Any, inner_frame: Any, outer_frame: Any, offs
                 "text": f"G {gap_right}",
                 "offset": -offset_base,
                 "angle": 0.0,
+                "category": "glass_cut",
+                "owner": _get_name(cutout) or "glass_cut",
             }))
 
     # Top gap from outer_top -> cutout top
@@ -211,6 +225,8 @@ def _glass_cut_annotations(cutout: Any, inner_frame: Any, outer_frame: Any, offs
                 "text": f"G {gap_top}",
                 "offset": offset_base,
                 "angle": 90.0,
+                "category": "glass_cut",
+                "owner": _get_name(cutout) or "glass_cut",
             }))
 
     # Bottom gap from cutout bottom -> outer_bot
@@ -224,21 +240,40 @@ def _glass_cut_annotations(cutout: Any, inner_frame: Any, outer_frame: Any, offs
                 "text": f"G {gap_bot}",
                 "offset": offset_base,
                 "angle": 90.0,
+                "category": "glass_cut",
+                "owner": _get_name(cutout) or "glass_cut",
             }))
 
     # Internal label: draw a small horizontal dimension across the inside so
     # renderers that ignore 'note' will still show the W x H text.
-    inner_from_x = min_x + (max_x - min_x) * 0.25
-    inner_to_x = max_x - (max_x - min_x) * 0.25
-    if inner_to_x > inner_from_x:
-        anns.append(Annotation.parse_obj({
-            "type": "dimension",
-            "from": (inner_from_x, cy),
-            "to": (inner_to_x, cy),
-            "text": f"W {width} x H {height}",
-            "offset": 0.0,
-            "angle": 0.0,
-        }))
+    # By default suppress the internal W x H label (not required in JSON).
+    # Consumers can opt-in to the internal label by setting
+    # `suppress_internal_label=False` on the cutout (either as an attribute
+    # on an object or as a dict key).
+    suppress = True
+    try:
+        val = getattr(cutout, "suppress_internal_label", None)
+        if val is not None:
+            suppress = bool(val)
+    except Exception:
+        pass
+    if isinstance(cutout, dict) and ("suppress_internal_label" in cutout):
+        suppress = bool(cutout.get("suppress_internal_label"))
+
+    if not suppress:
+        inner_from_x = min_x + (max_x - min_x) * 0.25
+        inner_to_x = max_x - (max_x - min_x) * 0.25
+        if inner_to_x > inner_from_x:
+            anns.append(Annotation.parse_obj({
+                "type": "dimension",
+                "from": (inner_from_x, cy),
+                "to": (inner_to_x, cy),
+                "text": f"W {width} x H {height}",
+                "offset": 0.0,
+                "angle": 0.0,
+                "category": "glass_cut",
+                "owner": _get_name(cutout) or "glass_cut",
+            }))
 
     return anns
 
@@ -259,6 +294,8 @@ def _hole_dimensions_annotations(hole: Any, offset_base: float = 4.0):
         "text": text,
         "offset": offset_base,
         "angle": 0.0,
+        "category": "hole",
+        "owner": _get_name(hole) or "hole",
     })
     return [ann]
 
@@ -313,13 +350,15 @@ def _frame_gap_annotation(frame1: Any, frame2: Any, offset_base: float = 6.0):
         if gap <= 0:
             return []
         ann = Annotation.parse_obj({
-            "type": "dimension",
-            "from": from_pt,
-            "to": to_pt,
-            "text": f"G {gap}",
-            "offset": offset_base,
-            "angle": 0.0,
-        })
+                "type": "dimension",
+                "from": from_pt,
+                "to": to_pt,
+                "text": f"G {gap}",
+                "offset": offset_base,
+                "angle": 0.0,
+                "category": "frame_gap",
+                "owner": f"{getattr(frame1, 'name', 'frame1')}_{getattr(frame2, 'name', 'frame2')}",
+            })
     else:
         # vertical gap preferred
         if min_y1 < min_y2:
@@ -355,12 +394,14 @@ def _frame_gap_annotation(frame1: Any, frame2: Any, offset_base: float = 6.0):
             "text": f"G {gap}",
             "offset": offset_base,
             "angle": 90.0,
+            "category": "frame_gap",
+            "owner": f"{getattr(frame1, 'name', 'frame1')}_{getattr(frame2, 'name', 'frame2')}",
         })
 
     return [ann] if ann is not None else []
 
 
-def _center_handle_annotations(center_cut: Any, left_frame: Any, outer_frame: Any) -> List[Annotation]:
+def _center_handle_annotations(center_cut: Any, frames: Optional[List[Any]], outer_frame: Any) -> List[Annotation]:
     anns: List[Annotation] = []
     pts = _get_points(center_cut) or []
     if not pts:
@@ -370,20 +411,54 @@ def _center_handle_annotations(center_cut: Any, left_frame: Any, outer_frame: An
     c_cy = (c_min_y + c_max_y) / 2.0
 
     # Horizontal gap to left inner frame
-    if left_frame is not None:
-        lf_pts = _get_points(left_frame) or []
-        if lf_pts:
-            lf_right = max(p[0] for p in lf_pts)
-            gap_h = round(max(0.0, c_min_x - lf_right), 3)
-            if gap_h > 0:
-                anns.append(Annotation.parse_obj({
-                    "type": "dimension",
-                    "from": (lf_right, c_cy),
-                    "to": (c_min_x, c_cy),
-                    "text": f"G {gap_h}",
-                    "offset": 6.0,
-                    "angle": 0.0,
-                }))
+    # Determine left reference x-coordinate. Prefer explicitly provided
+    # frames named 'left_inner' (use their right edge) or 'inner' (use their left edge),
+    # else pick the nearest frame whose right edge sits to the left of the center handle.
+    left_ref_x = None
+    frames_list = frames or []
+    # Try explicit named left/inner frames first
+    if frames_list:
+        fr_named = next((fr for fr in frames_list if ((_get_name(fr) or "").strip().lower() == "left_inner")), None)
+        if fr_named is None:
+            fr_named = next((fr for fr in frames_list if ((_get_name(fr) or "").strip().lower() == "inner")), None)
+        if fr_named is not None:
+            fpts = _get_points(fr_named) or []
+            if fpts:
+                nm = ((_get_name(fr_named) or "").strip().lower())
+                if nm == "inner":
+                    # inner: use left edge
+                    left_ref_x = min(p[0] for p in fpts)
+                else:
+                    # left_inner (or others): use right edge
+                    left_ref_x = max(p[0] for p in fpts)
+
+    # Fallback: choose nearest frame to the left based on right edge
+    if left_ref_x is None and frames_list:
+        left_candidates = []
+        for fr in frames_list:
+            fps = _get_points(fr) or []
+            if not fps:
+                continue
+            fr_min_x = min(p[0] for p in fps)
+            fr_max_x = max(p[0] for p in fps)
+            if fr_max_x <= c_cx:
+                left_candidates.append((fr_max_x, fr))
+        if left_candidates:
+            left_ref_x = max(left_candidates, key=lambda t: t[0])[0]
+
+    if left_ref_x is not None:
+        gap_h = round(max(0.0, c_min_x - left_ref_x), 3)
+        if gap_h > 0:
+            anns.append(Annotation.parse_obj({
+                "type": "dimension",
+                "from": (left_ref_x, c_cy),
+                "to": (c_min_x, c_cy),
+                "text": f"G {gap_h}",
+                "offset": 6.0,
+                "angle": 0.0,
+                "category": "center_handle",
+                "owner": _get_name(center_cut) or "center_handle",
+            }))
 
     # Vertical gaps to outer frame top/bottom
     if outer_frame is not None:
@@ -401,6 +476,8 @@ def _center_handle_annotations(center_cut: Any, left_frame: Any, outer_frame: An
                     "text": f"G {gap_top}",
                     "offset": 6.0,
                     "angle": 90.0,
+                    "category": "center_handle",
+                    "owner": _get_name(center_cut) or "center_handle",
                 }))
 
             gap_bot = round(max(0.0, c_min_y - of_bot), 3)
@@ -412,6 +489,8 @@ def _center_handle_annotations(center_cut: Any, left_frame: Any, outer_frame: An
                     "text": f"G {gap_bot}",
                     "offset": 6.0,
                     "angle": 90.0,
+                    "category": "center_handle",
+                    "owner": _get_name(center_cut) or "center_handle",
                 }))
 
     return anns
@@ -456,7 +535,13 @@ def _keybox_annotations(key_cut: Any, frames: List[Any], outer_frame: Any) -> Li
             if fr is not None:
                 fps = _get_points(fr) or []
                 if fps:
-                    left_ref_x = max(p[0] for p in fps)
+                    # If the named frame is 'inner', prefer the left edge (min x)
+                    # as the left reference; for explicit left_* frames use the
+                    # right edge (max x).
+                    if nm == "inner":
+                        left_ref_x = min(p[0] for p in fps)
+                    else:
+                        left_ref_x = max(p[0] for p in fps)
                     break
     if right_ref_x is None and frames:
         for nm in ("right_inner", "right_outer", "inner"):
@@ -464,7 +549,13 @@ def _keybox_annotations(key_cut: Any, frames: List[Any], outer_frame: Any) -> Li
             if fr is not None:
                 fps = _get_points(fr) or []
                 if fps:
-                    right_ref_x = min(p[0] for p in fps)
+                    # If the named frame is 'inner', prefer the right edge (max x)
+                    # as the right reference; for explicit right_* frames use the
+                    # left edge (min x).
+                    if nm == "inner":
+                        right_ref_x = max(p[0] for p in fps)
+                    else:
+                        right_ref_x = min(p[0] for p in fps)
                     break
 
     # horizontal gaps
@@ -478,6 +569,8 @@ def _keybox_annotations(key_cut: Any, frames: List[Any], outer_frame: Any) -> Li
                 "text": f"G {gap_left}",
                 "offset": 6.0,
                 "angle": 0.0,
+                "category": "keybox",
+                "owner": _get_name(key_cut) or "keybox",
             }))
     if right_ref_x is not None:
         gap_right = round(max(0.0, right_ref_x - k_max_x), 3)
@@ -489,6 +582,8 @@ def _keybox_annotations(key_cut: Any, frames: List[Any], outer_frame: Any) -> Li
                 "text": f"G {gap_right}",
                 "offset": 6.0,
                 "angle": 0.0,
+                "category": "keybox",
+                "owner": _get_name(key_cut) or "keybox",
             }))
 
     # bottom gap to outer frame bottom
@@ -508,6 +603,8 @@ def _keybox_annotations(key_cut: Any, frames: List[Any], outer_frame: Any) -> Li
                     "text": f"G {gap_bot}",
                     "offset": 6.0,
                     "angle": 90.0,
+                    "category": "keybox",
+                    "owner": _get_name(key_cut) or "keybox",
                 }))
 
     return anns
@@ -571,6 +668,8 @@ def _hole_offset_annotations(hole: Any, frames: List[Any], inner_frame: Any, out
                 "text": f"X {dx}",
                 "offset": 6.0,
                 "angle": 0.0,
+                "category": "hole",
+                "owner": _get_name(hole) or "hole",
             }))
     elif outer_left is not None:
         dx = round(max(0.0, hx - outer_left), 3)
@@ -582,6 +681,8 @@ def _hole_offset_annotations(hole: Any, frames: List[Any], inner_frame: Any, out
                 "text": f"X {dx}",
                 "offset": 6.0,
                 "angle": 0.0,
+                "category": "hole",
+                "owner": _get_name(hole) or "hole",
             }))
 
     # Vertical offsets
@@ -595,6 +696,8 @@ def _hole_offset_annotations(hole: Any, frames: List[Any], inner_frame: Any, out
                 "text": f"Y {dy}",
                 "offset": 6.0,
                 "angle": 90.0,
+                "category": "hole",
+                "owner": _get_name(hole) or "hole",
             }))
     if h_name == "hole_bottom" and outer_bot is not None:
         dyb = round(max(0.0, hy - outer_bot), 3)
@@ -606,11 +709,13 @@ def _hole_offset_annotations(hole: Any, frames: List[Any], inner_frame: Any, out
                 "text": f"Y {dyb}",
                 "offset": 6.0,
                 "angle": 90.0,
+                "category": "hole",
+                "owner": _get_name(hole) or "hole",
             }))
 
     return anns
 
-def generate_annotations(frames: List[Any], cutouts: List[Any], holes: List[Any]) -> List[Annotation]:
+def generate_annotations(frames: List[Any], cutouts: List[Any], holes: List[Any]) -> Dict[str, List[Annotation]]:
     """Generate annotations for frames, cutouts, and holes.
 
     - Each frame gets its own dimension.
@@ -618,7 +723,17 @@ def generate_annotations(frames: List[Any], cutouts: List[Any], holes: List[Any]
     - Offsets automatically adjusted so dimension lines sit outside all frames.
     """
 
-    annotations: List[Annotation] = []
+    # grouped annotations by logical category
+    annotations: Dict[str, List[Annotation]] = {
+        "frames": [],
+        "cutouts": [],
+        "glass_cut": [],
+        "center_handle": [],
+        "keybox": [],
+        "holes": [],
+        "frame_gaps": [],
+        "other": [],
+    }
 
     # Cached frame lookups so other parts (center handle, keybox, holes)
     # can reuse the same frames without repeating search logic.
@@ -652,7 +767,7 @@ def generate_annotations(frames: List[Any], cutouts: List[Any], holes: List[Any]
             placement = "bottom_left" if (i % 2) == 0 else "top_right"
             # Place width/height annotations for this frame using a fixed
             # clearance so outer annotation gaps are consistent.
-            annotations.extend(_frame_dimensions_annotations(
+            annotations["frames"].extend(_frame_dimensions_annotations(
                 f,
                 offset_base=clearance,
                 placement=placement,
@@ -665,34 +780,41 @@ def generate_annotations(frames: List[Any], cutouts: List[Any], holes: List[Any]
         # glass_cut gets a custom set of annotations: left/right from inner, top/bottom from outer,
         # plus an internal box note. Other cutouts use the generic cutout dims (width/height).
         if name == "glass_cut":
-            annotations.extend(_glass_cut_annotations(c, inner_frame, outer_frame, offset_base=offs))
+            # Add both the specialized glass_cut annotations (gaps to inner/outer)
+            # and the generic cutout width/height dimensions under the "cutouts"
+            # group so downstream consumers receive the standard W/H entries.
+            annotations["glass_cut"].extend(_glass_cut_annotations(c, inner_frame, outer_frame, offset_base=offs))
+            annotations["cutouts"].extend(_cutout_dimensions_annotations(c, left_frame, offset_base=offs))
         else:
             # pass left_frame so cutout dims include left-gap to inner frame when available
-            annotations.extend(_cutout_dimensions_annotations(c, left_frame, offset_base=offs))
+            annotations["cutouts"].extend(_cutout_dimensions_annotations(c, left_frame, offset_base=offs))
 
     # --- 🧩 Extra measurements for center handle ---
     center_cut = next((c for c in (cutouts or []) if (_get_name(c) or "").strip().lower() == "center_handle"), None)
     if center_cut:
-        annotations.extend(_center_handle_annotations(center_cut, left_frame, outer_frame))
+        # pass the full frames list so the center-handle helper can
+        # determine the nearest left reference when an explicit left
+        # frame isn't configured.
+        annotations["center_handle"].extend(_center_handle_annotations(center_cut, frames, outer_frame))
 
     # --- 🧩 Existing logic for holes ---
     for i, h in enumerate(holes or []):
         offs = 4.0 + i * 2.0
-        annotations.extend(_hole_dimensions_annotations(h, offset_base=offs))
+        annotations["holes"].extend(_hole_dimensions_annotations(h, offset_base=offs))
         # use inner_frame for horizontal offset and outer_frame for vertical offsets
-        annotations.extend(_hole_offset_annotations(h, frames, inner_frame, outer_frame))
+        annotations["holes"].extend(_hole_offset_annotations(h, frames, inner_frame, outer_frame))
 
     # --- 🧩 Keybox extra measurements ---
     # Find a 'keybox' cutout and annotate horizontal gaps to nearest frames
     # (left/right) and vertical gap from outer bottom to keybox bottom.
     key_cut = next((c for c in (cutouts or []) if (_get_name(c) or "").strip().lower() == "keybox"), None)
     if key_cut:
-        annotations.extend(_keybox_annotations(key_cut, frames, outer_frame))
+        annotations["keybox"].extend(_keybox_annotations(key_cut, frames, outer_frame))
 
     # --- 🧩 Frame gap annotations (your original logic) ---
     if frames and len(frames) >= 2:
-        annotations.extend(_frame_gap_annotation(frames[0], frames[1], offset_base=6.0))
+        annotations["frame_gaps"].extend(_frame_gap_annotation(frames[0], frames[1], offset_base=6.0))
     if frames and len(frames) >= 4:
-        annotations.extend(_frame_gap_annotation(frames[2], frames[3], offset_base=6.0))
+        annotations["frame_gaps"].extend(_frame_gap_annotation(frames[2], frames[3], offset_base=6.0))
 
     return annotations

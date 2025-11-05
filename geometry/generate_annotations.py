@@ -308,97 +308,96 @@ def _frame_gap_annotation(frame1: Any, frame2: Any, offset_base: float = 6.0):
     min_x1, min_y1, max_x1, max_y1 = _bbox(frame1.points)
     min_x2, min_y2, max_x2, max_y2 = _bbox(frame2.points)
 
-    # Compute horizontal and vertical separation (non-negative). If both are zero,
-    # rectangles intersect/overlap and there is no gap annotation needed.
-    dx = max(min_x2 - max_x1, min_x1 - max_x2, 0.0)
-    dy = max(min_y2 - max_y1, min_y1 - max_y2, 0.0)
+    anns: List[Annotation] = []
 
-    if dx == 0.0 and dy == 0.0:
-        # Rectangles overlap or touch — no gap to annotate
-        return []
+    # centers (used when there is no overlap to place the annotation)
+    c1x = (min_x1 + max_x1) / 2.0
+    c1y = (min_y1 + max_y1) / 2.0
+    c2x = (min_x2 + max_x2) / 2.0
+    c2y = (min_y2 + max_y2) / 2.0
 
-    # Choose the primary gap direction (shorter separation axis preferred)
-    ann = None
-    if dx <= dy:
-        # horizontal gap preferred
-        # pick x positions of nearest edges
-        if min_x1 < min_x2:
-            from_x = max_x1
-            to_x = min_x2
-            # y: prefer actual vertical overlap if exists, else midpoint between centers
-            overlap_y_min = max(min_y1, min_y2)
-            overlap_y_max = min(max_y1, max_y2)
-            if overlap_y_max > overlap_y_min:
-                y = (overlap_y_min + overlap_y_max) / 2.0
-            else:
-                y = ((min_y1 + max_y1) / 2.0 + (min_y2 + max_y2) / 2.0) / 2.0
-            from_pt = (from_x, y)
-            to_pt = (to_x, y)
-        else:
-            from_x = max_x2
-            to_x = min_x1
-            overlap_y_min = max(min_y1, min_y2)
-            overlap_y_max = min(max_y1, max_y2)
-            if overlap_y_max > overlap_y_min:
-                y = (overlap_y_min + overlap_y_max) / 2.0
-            else:
-                y = ((min_y1 + max_y1) / 2.0 + (min_y2 + max_y2) / 2.0) / 2.0
-            from_pt = (from_x, y)
-            to_pt = (to_x, y)
+    owner = f"{getattr(frame1, 'name', 'frame1')}_{getattr(frame2, 'name', 'frame2')}"
 
-        gap = round(max(0.0, to_pt[0] - from_pt[0]), 3)
-        if gap <= 0:
-            return []
-        ann = Annotation.parse_obj({
-                "type": "dimension",
-                "from": from_pt,
-                "to": to_pt,
-                "text": f"G {gap}",
-                "offset": offset_base,
-                "angle": 0.0,
-                "category": "frame_gap",
-                "owner": f"{getattr(frame1, 'name', 'frame1')}_{getattr(frame2, 'name', 'frame2')}",
-            })
+    # Determine overlap midpoints where possible
+    overlap_y_min = max(min_y1, min_y2)
+    overlap_y_max = min(max_y1, max_y2)
+    if overlap_y_max > overlap_y_min:
+        mid_y = (overlap_y_min + overlap_y_max) / 2.0
     else:
-        # vertical gap preferred
-        if min_y1 < min_y2:
-            from_y = max_y1
-            to_y = min_y2
-            overlap_x_min = max(min_x1, min_x2)
-            overlap_x_max = min(max_x1, max_x2)
-            if overlap_x_max > overlap_x_min:
-                x = (overlap_x_min + overlap_x_max) / 2.0
-            else:
-                x = ((min_x1 + max_x1) / 2.0 + (min_x2 + max_x2) / 2.0) / 2.0
-            from_pt = (x, from_y)
-            to_pt = (x, to_y)
-        else:
-            from_y = max_y2
-            to_y = min_y1
-            overlap_x_min = max(min_x1, min_x2)
-            overlap_x_max = min(max_x1, max_x2)
-            if overlap_x_max > overlap_x_min:
-                x = (overlap_x_min + overlap_x_max) / 2.0
-            else:
-                x = ((min_x1 + max_x1) / 2.0 + (min_x2 + max_x2) / 2.0) / 2.0
-            from_pt = (x, from_y)
-            to_pt = (x, to_y)
+        mid_y = (c1y + c2y) / 2.0
 
-        gap = round(max(0.0, to_pt[1] - from_pt[1]), 3)
-        if gap <= 0:
-            return []
-        ann = Annotation.parse_obj({
+    overlap_x_min = max(min_x1, min_x2)
+    overlap_x_max = min(max_x1, max_x2)
+    if overlap_x_max > overlap_x_min:
+        mid_x = (overlap_x_min + overlap_x_max) / 2.0
+    else:
+        mid_x = (c1x + c2x) / 2.0
+
+    # Left edge gap: distance between the two left edges
+    left_gap = round(abs(min_x2 - min_x1), 3)
+    if left_gap > 0:
+        lx_from = (min(min_x1, min_x2), mid_y)
+        lx_to = (max(min_x1, min_x2), mid_y)
+        anns.append(Annotation.parse_obj({
             "type": "dimension",
-            "from": from_pt,
-            "to": to_pt,
-            "text": f"G {gap}",
+            "from": lx_from,
+            "to": lx_to,
+            "text": f"G {left_gap}",
+            "offset": offset_base,
+            "angle": 0.0,
+            "category": "frame_gap",
+            "owner": owner,
+        }))
+
+    # Right edge gap: distance between the two right edges
+    right_gap = round(abs(max_x1 - max_x2), 3)
+    if right_gap > 0:
+        rx_from = (min(max_x1, max_x2), mid_y)
+        rx_to = (max(max_x1, max_x2), mid_y)
+        anns.append(Annotation.parse_obj({
+            "type": "dimension",
+            "from": rx_from,
+            "to": rx_to,
+            "text": f"G {right_gap}",
+            "offset": offset_base,
+            "angle": 0.0,
+            "category": "frame_gap",
+            "owner": owner,
+        }))
+
+    # Top edge gap: distance between the two top edges (max y)
+    top_gap = round(abs(max_y1 - max_y2), 3)
+    if top_gap > 0:
+        ty_from = (mid_x, min(max_y1, max_y2))
+        ty_to = (mid_x, max(max_y1, max_y2))
+        anns.append(Annotation.parse_obj({
+            "type": "dimension",
+            "from": ty_from,
+            "to": ty_to,
+            "text": f"G {top_gap}",
             "offset": offset_base,
             "angle": 90.0,
             "category": "frame_gap",
-            "owner": f"{getattr(frame1, 'name', 'frame1')}_{getattr(frame2, 'name', 'frame2')}",
-        })
+            "owner": owner,
+        }))
 
-    return [ann] if ann is not None else []
+    # Bottom edge gap: distance between the two bottom edges (min y)
+    bottom_gap = round(abs(min_y2 - min_y1), 3)
+    if bottom_gap > 0:
+        by_from = (mid_x, min(min_y1, min_y2))
+        by_to = (mid_x, max(min_y1, min_y2))
+        anns.append(Annotation.parse_obj({
+            "type": "dimension",
+            "from": by_from,
+            "to": by_to,
+            "text": f"G {bottom_gap}",
+            "offset": offset_base,
+            "angle": 90.0,
+            "category": "frame_gap",
+            "owner": owner,
+        }))
+
+    return anns
 
 
 def _center_handle_annotations(center_cut: Any, frames: Optional[List[Any]], outer_frame: Any) -> List[Annotation]:

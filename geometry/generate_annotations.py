@@ -417,19 +417,35 @@ def _center_handle_annotations(center_cut: Any, frames: Optional[List[Any]], out
     frames_list = frames or []
     # Try explicit named left/inner frames first
     if frames_list:
-        fr_named = next((fr for fr in frames_list if ((_get_name(fr) or "").strip().lower() == "left_inner")), None)
+        # Prefer an explicitly-named 'inner' frame first (right-side inner for double doors),
+        # then fallback to 'left_inner' if 'inner' not present.
+        fr_named = next((fr for fr in frames_list if ((_get_name(fr) or "").strip().lower() == "inner")), None)
         if fr_named is None:
-            fr_named = next((fr for fr in frames_list if ((_get_name(fr) or "").strip().lower() == "inner")), None)
+            fr_named = next((fr for fr in frames_list if ((_get_name(fr) or "").strip().lower() == "left_inner")), None)
         if fr_named is not None:
             fpts = _get_points(fr_named) or []
             if fpts:
                 nm = ((_get_name(fr_named) or "").strip().lower())
-                if nm == "inner":
-                    # inner: use left edge
-                    left_ref_x = min(p[0] for p in fpts)
+                fr_min_x = min(p[0] for p in fpts)
+                fr_max_x = max(p[0] for p in fpts)
+                # Prefer an edge that lies to the left of the center handle (<= c_cx).
+                # Choose the edge closest to c_cx (max of candidates) so we measure from
+                # the nearest edge on the left side. This handles double-door cases where
+                # an 'inner' frame may be positioned to the left or right of the center.
+                candidates = []
+                if fr_max_x <= c_cx:
+                    candidates.append(fr_max_x)
+                if fr_min_x <= c_cx:
+                    candidates.append(fr_min_x)
+                if candidates:
+                    left_ref_x = max(candidates)
                 else:
-                    # left_inner (or others): use right edge
-                    left_ref_x = max(p[0] for p in fpts)
+                    # no edge sits to the left of center; fall back to the nearer edge
+                    # (choose the one with smaller distance to c_cx)
+                    if abs(fr_max_x - c_cx) < abs(fr_min_x - c_cx):
+                        left_ref_x = fr_max_x
+                    else:
+                        left_ref_x = fr_min_x
 
     # Fallback: choose nearest frame to the left based on right edge
     if left_ref_x is None and frames_list:
@@ -515,6 +531,13 @@ def _keybox_annotations(key_cut: Any, frames: List[Any], outer_frame: Any) -> Li
         fr_max_x = max(p[0] for p in fps)
         if fr_max_x <= k_cx:
             left_candidates.append((fr_max_x, fr))
+        # also consider an 'inner' frame's left edge as a potential left reference
+        # (useful when inner spans across the key center but its left edge is the
+        # nearest meaningful reference)
+        if ((_get_name(fr) or "").strip().lower() == "inner"):
+            # add inner's left edge as candidate if it's left of the key center
+            if fr_min_x <= k_cx:
+                left_candidates.append((fr_min_x, fr))
         if fr_min_x >= k_cx:
             right_candidates.append((fr_min_x, fr))
 
@@ -776,17 +799,79 @@ def generate_annotations(frames: List[Any], cutouts: List[Any], holes: List[Any]
     for i, c in enumerate(cutouts or []):
         offs = 6.0 + i * 3.0
         name = (_get_name(c) or "").strip().lower()
-        # glass_cut gets a custom set of annotations: left/right from inner, top/bottom from outer,
-        # plus an internal box note. Other cutouts use the generic cutout dims (width/height).
-        if name == "glass_cut":
-            # Add both the specialized glass_cut annotations (gaps to inner/outer)
-            # and the generic cutout width/height dimensions under the "cutouts"
-            # group so downstream consumers receive the standard W/H entries.
-            annotations["glass_cut"].extend(_glass_cut_annotations(c, inner_frame, outer_frame, offset_base=offs))
-            annotations["cutouts"].extend(_cutout_dimensions_annotations(c, left_frame, offset_base=offs))
+        # determine nearest left frame for this specific cutout (prefer local nearest)
+        pts_c = _get_points(c) or []
+        c_min_x = None
+        if pts_c:
+            c_min_x = min(p[0] for p in pts_c)
+
+        left_ref_for_cutout = None
+        if frames and c_min_x is not None:
+            # prefer a frame that horizontally contains the cutout (tightest fit)
+            # — this avoids measuring large irrelevant gaps to distant frames
+            # (for example, a right-side glass cutout shouldn't measure to the far-left frame).
+            c_max_x = max(p[0] for p in pts_c)
+            containing = []
+            left_candidates = []
+            for fr in frames:
+                fps = _get_points(fr) or []
+                if not fps:
+                    continue
+                fr_min_x = min(p[0] for p in fps)
+                fr_max_x = max(p[0] for p in fps)
+                # collect frames that fully contain the cutout horizontally
+                if fr_min_x <= c_min_x and fr_max_x >= c_max_x:
+                    containing.append((fr_max_x - fr_min_x, fr))
+                # fallback candidates: frames whose right edge lies to the left of cutout
+                if fr_max_x <= c_min_x:
+                    left_candidates.append((fr_max_x, fr))
+            if containing:
+                # pick the tightest containing frame (smallest width)
+                left_ref_for_cutout = min(containing, key=lambda t: t[0])[1]
+            elif left_candidates:
+                # otherwise pick the nearest frame to the left
+                left_ref_for_cutout = max(left_candidates, key=lambda t: t[0])[1]
+
+        # glass_cut and named variants (glass_*) get specialized annotations plus
+        # standard W/H dims. For glass gaps we need to choose the correct inner
+        # frame (there may be two 'inner' frames for double doors). Prefer an
+        # inner frame that actually contains the cutout horizontally (tightest
+        # fit); fall back to the global inner_frame or left_frame.
+        if name == "glass_cut" or name.startswith("glass_"):
+            chosen_inner = None
+            try:
+                c_pts = _get_points(c) or []
+                if c_pts:
+                    c_min_x = min(p[0] for p in c_pts)
+                    c_max_x = max(p[0] for p in c_pts)
+                    # prefer the provided inner_frame if it contains the cutout
+                    if inner_frame is not None:
+                        ipts = _get_points(inner_frame) or []
+                        if ipts:
+                            if min(p[0] for p in ipts) <= c_min_x and max(p[0] for p in ipts) >= c_max_x:
+                                chosen_inner = inner_frame
+                    # else try the left_frame (commonly left_inner) if it contains
+                    if chosen_inner is None and left_frame is not None:
+                        lf_pts = _get_points(left_frame) or []
+                        if lf_pts and min(p[0] for p in lf_pts) <= c_min_x and max(p[0] for p in lf_pts) >= c_max_x:
+                            chosen_inner = left_frame
+            except Exception:
+                chosen_inner = None
+
+            if chosen_inner is None:
+                # fallback to whichever inner we have available
+                chosen_inner = inner_frame or left_frame
+
+            annotations["glass_cut"].extend(_glass_cut_annotations(c, chosen_inner, outer_frame, offset_base=offs))
+            # include only W/H dims under 'cutouts' (no left-gap)
+            annotations["cutouts"].extend(_cutout_dimensions_annotations(c, None, offset_base=offs))
+        elif name in ("center_handle", "keybox"):
+            # center_handle and keybox have their own specialized annotations; avoid duplicating the
+            # left-gap in the generic cutouts group by not passing a left reference here.
+            annotations["cutouts"].extend(_cutout_dimensions_annotations(c, None, offset_base=offs))
         else:
-            # pass left_frame so cutout dims include left-gap to inner frame when available
-            annotations["cutouts"].extend(_cutout_dimensions_annotations(c, left_frame, offset_base=offs))
+            # pass local left ref (or global left_frame fallback) so other cutouts get correct left-gap
+            annotations["cutouts"].extend(_cutout_dimensions_annotations(c, left_ref_for_cutout or left_frame, offset_base=offs))
 
     # --- 🧩 Extra measurements for center handle ---
     center_cut = next((c for c in (cutouts or []) if (_get_name(c) or "").strip().lower() == "center_handle"), None)

@@ -15,6 +15,7 @@ from geometry.door_geometry import compute_door_geometry
 from fastapi_app.schemas_input import DoorDXFRequest
 from fastapi_app.schemas_output import SchemasOutput
 import logging
+from DoorDrawingPDF import DoorDrawingPDF
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,8 @@ class DoorDrawingGenerator:
         doc: Optional[Drawing] = None,
         msp: Optional[Modelspace] = None,
         save_file: bool = True,
-        rotated: bool = False
+        rotated: bool = False,
+        save_pdf: bool = False,
     ) -> None:
         """Generate a DXF file for the door with annotations.
 
@@ -175,6 +177,14 @@ class DoorDrawingGenerator:
         if save_file and file_name is not None:
             doc.saveas(file_name)
             print(f"DXF file '{file_name}' created successfully.")
+
+            # If user also wants a PDF, generate it
+            if save_pdf:
+                try:
+                    pdf_name = file_name.replace(".dxf", ".pdf")
+                    DoorDrawingPDF.export_to_pdf(doc, pdf_name)
+                except Exception as e:
+                    print(f"Failed to export PDF: {e}")
 
     @staticmethod
     def add_dimension_line(
@@ -566,6 +576,7 @@ if __name__ == "__main__":
             defaults=DefaultInfo()
         )
 
-        DoorDrawingGenerator.generate_door_dxf(req, file_name="door_F14P2.dxf")
+        # save_pdf is a parameter on generate_door_dxf (not part of metadata)
+        DoorDrawingGenerator.generate_door_dxf(req, file_name="door_F14P2.dxf", save_pdf=False)
     except Exception as e:
         print(f"Error: {e}")

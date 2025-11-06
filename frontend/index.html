@@ -196,24 +196,9 @@
 
         <div class="controls">
           <button type="submit" class="btn-primary">Generate DXF</button>
-          <button type="button" id="previewBtn" class="btn-primary">
-            Preview
-          </button>
         </div>
 
-        <div id="previewContainer" class="mt">
-          <h4>Preview Result</h4>
-          <div class="preview-row">
-            <pre id="previewBox" class="hidden preview-box"></pre>
-            <!-- ADDED id="svgPreviewWrapper" so app.js can find/replace SVG with canvas if needed -->
-            <div id="svgPreviewWrapper" class="svg-preview-wrapper">
-              <canvas id="fabricCanvas" width="1000" height="800"></canvas>
-              <div class="svg-preview-note">
-                Fabric.js preview (zoom/pan: hold ALT)
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- Preview section removed: previewContainer was intentionally deleted -->
       </form>
     </div>
 

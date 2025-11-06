@@ -32,7 +32,7 @@ let touchEndX = 0;
 
 // Validation rules
 const MIN_DIM = 200;
-const MAX_DIM = 2000;
+const MAX_DIM = 3000;
 const MIN_ALLOW = 0;
 const MAX_ALLOW = 50;
 

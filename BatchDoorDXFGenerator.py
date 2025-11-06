@@ -39,7 +39,7 @@ def process_bins(rectangles, door_params_list, sheet_width: int = 1250, sheet_he
     # Flatten all placements for visualization
     all_placements = [p for bin_data in bins for p in bin_data["placements"]]
     # Uncomment to visualize placements during development
-    visualize_placements(all_placements, sheet_width=sheet_width, sheet_height=sheet_height)
+    #visualize_placements(all_placements, sheet_width=sheet_width, sheet_height=sheet_height)
 
     # Generate DXF for all bins and capture zip path returned by generator
     zip_path = generate_all_bins_dxf(

@@ -456,66 +456,83 @@ form.addEventListener("submit", async (e) => {
       };
 
       const response = await fetch("/generate-single-dxf/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestPayload),
-      });
-
-      if (!response.ok) throw new Error("DXF generation failed");
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "Single_door.dxf";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      showToast("✅ DXF file generated successfully", "success");
-    } catch (err) {
-      showToast("❌ " + err.message, "error");
-    } finally {
-      form.classList.remove("loading");
-    }
-  } else if (currentMode === "bulk") {
-    if (!excelInput.files.length) {
-      showToast("⚠️ Please select an Excel file!", "error");
-      form.classList.remove("loading");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", excelInput.files[0]);
-    // include selected sheet size (format: WIDTHxHEIGHT, e.g. "1250x2500")
-    if (sheetSize && sheetSize.value) {
-      formData.append("sheet_size", sheetSize.value);
-    }
-
-    try {
-      const response = await fetch("/generate-dxf/", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) throw new Error("DXF ZIP generation failed");
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "Doors.zip";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      showToast("✅ ZIP generated successfully", "success");
-    } catch (err) {
-      showToast("❌ " + err.message, "error");
-    } finally {
-      form.classList.remove("loading");
-    }
-  }
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(requestPayload),
 });
 
+if (!response.ok) throw new Error("DXF generation failed");
+
+const blob = await response.blob();
+const url = window.URL.createObjectURL(blob);
+
+// Extract width & height from payload (adjust keys based on your payload)
+const width = requestPayload.width || requestPayload.door_width || 600;
+const height = requestPayload.height || requestPayload.door_height || 1700;
+
+// Generate timestamp-based dynamic filename
+const timestamp = Date.now();
+const fileName = `Single_Normal_${width}${height}_${timestamp}.dxf`;
+
+// Trigger DXF file download
+const a = document.createElement("a");
+a.href = url;
+a.download = fileName;
+document.body.appendChild(a);
+a.click();
+a.remove();
+
+showToast(`✅ DXF file (${fileName}) generated successfully`, "success");
+} catch (err) {
+  showToast("❌ " + err.message, "error");
+} finally {
+  form.classList.remove("loading");
+}
+} else if (currentMode === "bulk") {
+  if (!excelInput.files.length) {
+    showToast("⚠️ Please select an Excel file!", "error");
+    form.classList.remove("loading");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", excelInput.files[0]);
+  // include selected sheet size (format: WIDTHxHEIGHT, e.g. "1250x2500")
+  if (sheetSize && sheetSize.value) {
+    formData.append("sheet_size", sheetSize.value);
+  }
+
+  try {
+    const response = await fetch("/generate-dxf/", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) throw new Error("DXF ZIP generation failed");
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    // Generate ZIP filename with timestamp
+    const timestamp = Date.now();
+    const zipFileName = `Doors_${timestamp}.zip`;
+
+    // Trigger ZIP download
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = zipFileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    showToast(`✅ ZIP file (${zipFileName}) generated successfully`, "success");
+  } catch (err) {
+    showToast("❌ " + err.message, "error");
+  } finally {
+    form.classList.remove("loading");
+  }
+}
+});
 // Helper to build the same request payload used for generation
 function buildRequestPayload() {
   const data = {};

@@ -467,9 +467,8 @@ const blob = await response.blob();
 const url = window.URL.createObjectURL(blob);
 
 // Extract width & height from payload (adjust keys based on your payload)
-const width = requestPayload.width || requestPayload.door_width || 600;
-const height = requestPayload.height || requestPayload.door_height || 1700;
-
+const width = requestPayload.dimensions?.width_measurement || 600;
+const height = requestPayload.dimensions?.height_measurement || 1700;
 // Generate timestamp-based dynamic filename
 const timestamp = Date.now();
 const fileName = `Single_Normal_${width}${height}_${timestamp}.dxf`;

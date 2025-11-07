@@ -388,100 +388,101 @@ form.addEventListener("submit", async (e) => {
     }
 
     try {
-      // Build request payload matching the DoorDXFRequest schema expected by the server
-      // safe numeric parse helper: preserves explicit 0, rejects NaN
-      function toNumberOrDefault(value, defaultVal) {
-        const n = Number(value);
-        return Number.isFinite(n) ? n : defaultVal;
-      }
+  // Build request payload matching the DoorDXFRequest schema expected by the server
+  // safe numeric parse helper: preserves explicit 0, rejects NaN
+  function toNumberOrDefault(value, defaultVal) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : defaultVal;
+  }
 
-      const allowanceDefault =
-        defaultAllowance && defaultAllowance.value === "yes" ? 25 : 0;
+  const allowanceDefault =
+    defaultAllowance && defaultAllowance.value === "yes" ? 25 : 0;
 
-      const requestPayload = {
-        mode: "generate",
-        door: {
-          category: doorType
-            ? doorType.value === "double"
-              ? "Double"
-              : "Single"
-            : "Single",
-          type: subType ? subType.value || "Normal" : "Normal",
-          option:
-            fireOption && !fireOptionsContainer.classList.contains("hidden")
-              ? fireOption.value || null
-              : null,
-          hole_offset: holeOffset ? holeOffset.value : "",
-          default_allowance: defaultAllowance ? defaultAllowance.value : "yes",
-        },
-        dimensions: {
-          width_measurement: toNumberOrDefault(data.width_measurement, 0),
-          height_measurement: toNumberOrDefault(data.height_measurement, 0),
-          left_side_allowance_width: toNumberOrDefault(
-            data.left_side_allowance_width,
-            allowanceDefault
-          ),
-          right_side_allowance_width: toNumberOrDefault(
-            data.right_side_allowance_width,
-            allowanceDefault
-          ),
-          top_side_allowance_height: toNumberOrDefault(
-            data.top_side_allowance_height,
-            allowanceDefault
-          ),
-          bottom_side_allowance_height: toNumberOrDefault(
-            data.bottom_side_allowance_height,
-            allowanceDefault
-          ),
-        },
-        metadata: {
-          label: data.file_name
-            ? data.file_name.replace(/\.dxf$/i, "")
-            : "Single",
-          file_name: data.file_name || "Single_door.dxf",
-          width: 0,
-          height: 0,
-          rotated: false,
-          is_annotation_required: true,
-          offset: [0.0, 0.0],
-        },
-        defaults: {
-          door_minus_measurement_width:
-            Number(data.door_minus_measurement_width) || 68,
-          door_minus_measurement_height:
-            Number(data.door_minus_measurement_height) || 70,
-          bending_width: Number(data.bending_width) || 31,
-          bending_height: Number(data.bending_height) || 24,
-        },
-      };
+  // Extract width & height for filename
+  const width = toNumberOrDefault(data.width_measurement, 0);
+  const height = toNumberOrDefault(data.height_measurement, 0);
+  const timestamp = Date.now();
 
-      const response = await fetch("/generate-single-dxf/", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(requestPayload),
-});
+  const safeWidth = String(width).replace(/\./g, "_");
+const safeHeight = String(height).replace(/\./g, "_");
+const dynamicFileName = `Single_Normal_${safeWidth}x${safeHeight}_${timestamp}.dxf`;
 
-if (!response.ok) throw new Error("DXF generation failed");
+  const requestPayload = {
+    mode: "generate",
+    door: {
+      category: doorType
+        ? doorType.value === "double"
+          ? "Double"
+          : "Single"
+        : "Single",
+      type: subType ? subType.value || "Normal" : "Normal",
+      option:
+        fireOption && !fireOptionsContainer.classList.contains("hidden")
+          ? fireOption.value || null
+          : null,
+      hole_offset: holeOffset ? holeOffset.value : "",
+      default_allowance: defaultAllowance ? defaultAllowance.value : "yes",
+    },
+    dimensions: {
+      width_measurement: width,
+      height_measurement: height,
+      left_side_allowance_width: toNumberOrDefault(
+        data.left_side_allowance_width,
+        allowanceDefault
+      ),
+      right_side_allowance_width: toNumberOrDefault(
+        data.right_side_allowance_width,
+        allowanceDefault
+      ),
+      top_side_allowance_height: toNumberOrDefault(
+        data.top_side_allowance_height,
+        allowanceDefault
+      ),
+      bottom_side_allowance_height: toNumberOrDefault(
+        data.bottom_side_allowance_height,
+        allowanceDefault
+      ),
+    },
+    metadata: {
+      label: dynamicFileName.replace(/\.dxf$/i, ""),
+      file_name: dynamicFileName,
+      width: 0,
+      height: 0,
+      rotated: false,
+      is_annotation_required: true,
+      offset: [0.0, 0.0],
+    },
+    defaults: {
+      door_minus_measurement_width:
+        Number(data.door_minus_measurement_width) || 68,
+      door_minus_measurement_height:
+        Number(data.door_minus_measurement_height) || 70,
+      bending_width: Number(data.bending_width) || 31,
+      bending_height: Number(data.bending_height) || 24,
+    },
+  };
 
-const blob = await response.blob();
-const url = window.URL.createObjectURL(blob);
+  // Send API request
+  const response = await fetch("/generate-single-dxf/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(requestPayload),
+  });
 
-// Extract width & height from payload (adjust keys based on your payload)
-const width = requestPayload.dimensions?.width_measurement || 600;
-const height = requestPayload.dimensions?.height_measurement || 1700;
-// Generate timestamp-based dynamic filename
-const timestamp = Date.now();
-const fileName = `Single_Normal_${width}${height}_${timestamp}.dxf`;
+  if (!response.ok) throw new Error("DXF generation failed");
 
-// Trigger DXF file download
-const a = document.createElement("a");
-a.href = url;
-a.download = fileName;
-document.body.appendChild(a);
-a.click();
-a.remove();
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
 
-showToast(`✅ DXF file (${fileName}) generated successfully`, "success");
+  // Trigger DXF file download using dynamic filename
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = dynamicFileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  showToast(`✅ DXF file (${dynamicFileName}) generated successfully`, "success");
 } catch (err) {
   showToast("❌ " + err.message, "error");
 } finally {
@@ -501,35 +502,46 @@ showToast(`✅ DXF file (${fileName}) generated successfully`, "success");
     formData.append("sheet_size", sheetSize.value);
   }
 
-  try {
-    const response = await fetch("/generate-dxf/", {
-      method: "POST",
-      body: formData,
-    });
+ try {
+  const response = await fetch("/generate-dxf/", {
+    method: "POST",
+    body: formData,
+  });
 
-    if (!response.ok) throw new Error("DXF ZIP generation failed");
+  if (!response.ok) throw new Error("DXF ZIP generation failed");
 
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
+  // Try to extract filename from the response header
+  const contentDisposition = response.headers.get("Content-Disposition");
+  let zipFileName = "Doors.zip";
 
-    // Generate ZIP filename with timestamp
+  if (contentDisposition && contentDisposition.includes("filename=")) {
+    const match = contentDisposition.match(/filename="?([^"]+)"?/);
+    if (match && match[1]) {
+      zipFileName = match[1];
+    }
+  } else {
+    // fallback: timestamp-based filename
     const timestamp = Date.now();
-    const zipFileName = `Doors_${timestamp}.zip`;
-
-    // Trigger ZIP download
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = zipFileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    showToast(`✅ ZIP file (${zipFileName}) generated successfully`, "success");
-  } catch (err) {
-    showToast("❌ " + err.message, "error");
-  } finally {
-    form.classList.remove("loading");
+    zipFileName = `Doors_${timestamp}.zip`;
   }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+
+  // Trigger ZIP download
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = zipFileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  showToast(`✅ ZIP file (${zipFileName}) generated successfully`, "success");
+} catch (err) {
+  showToast("❌ " + err.message, "error");
+} finally {
+  form.classList.remove("loading");
+} 
 }
 });
 // Helper to build the same request payload used for generation

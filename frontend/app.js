@@ -416,7 +416,7 @@ const safeSubtype = safe(subtype);
 const formattedTimestamp = getFormattedTimestamp();
 
 // Build dynamic filename
-const dynamicFileName = `${safeCategory}_${safeSubtype}_${safeWidth}x${safeHeight}_${formattedTimestamp}`;
+const dynamicFileName = `${safeCategory}_${safeSubtype}_${safeWidth}x${safeHeight}_${formattedTimestamp}.dxf`;
 
 // Construct the request payload
 const requestPayload = {

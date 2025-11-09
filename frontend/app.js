@@ -401,28 +401,36 @@ form.addEventListener("submit", async (e) => {
   // Extract width & height for filename
   const width = toNumberOrDefault(data.width_measurement, 0);
   const height = toNumberOrDefault(data.height_measurement, 0);
-  const timestamp = Date.now();
+// Determine door type and subtype safely
+const category = doorType?.value === "double" ? "Double" : "Single";
+const subtype = subType?.value || "Normal";
 
-  const safeWidth = String(width).replace(/\./g, "_");
-const safeHeight = String(height).replace(/\./g, "_");
-const dynamicFileName = `Single_Normal_${safeWidth}x${safeHeight}_${timestamp}.dxf`;
+// Sanitize values for safe filenames
+const safe = (value) => String(value).replace(/[^a-zA-Z0-9_.-]/g, "_");
+const safeWidth = safe(width).replace(/\./g, "_");
+const safeHeight = safe(height).replace(/\./g, "_");
+const safeCategory = safe(category);
+const safeSubtype = safe(subtype);
 
-  const requestPayload = {
-    mode: "generate",
-    door: {
-      category: doorType
-        ? doorType.value === "double"
-          ? "Double"
-          : "Single"
-        : "Single",
-      type: subType ? subType.value || "Normal" : "Normal",
-      option:
-        fireOption && !fireOptionsContainer.classList.contains("hidden")
-          ? fireOption.value || null
-          : null,
-      hole_offset: holeOffset ? holeOffset.value : "",
-      default_allowance: defaultAllowance ? defaultAllowance.value : "yes",
-    },
+// Generate formatted timestamp
+const formattedTimestamp = getFormattedTimestamp();
+
+// Build dynamic filename
+const dynamicFileName = `${safeCategory}_${safeSubtype}_${safeWidth}x${safeHeight}_${formattedTimestamp}`;
+
+// Construct the request payload
+const requestPayload = {
+  mode: "generate",
+  door: {
+    category,
+    type: subtype,
+    option:
+      fireOption && !fireOptionsContainer.classList.contains("hidden")
+        ? fireOption.value || null
+        : null,
+    hole_offset: holeOffset?.value || "",
+    default_allowance: defaultAllowance?.value || "yes",
+  },
     dimensions: {
       width_measurement: width,
       height_measurement: height,

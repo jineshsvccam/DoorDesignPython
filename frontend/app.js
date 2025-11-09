@@ -1,3 +1,182 @@
+// Extracted JS from index.html
+const toggleSwitch = document.getElementById("toggleSwitch");
+const toggleSlider = document.getElementById("toggleSlider");
+const toggleOptions = document.querySelectorAll(".toggle-option");
+const toggleHint = document.getElementById("toggleHint");
+const singleInputsDiv = document.getElementById("singleInputs");
+const bulkInputsDiv = document.getElementById("bulkInputs");
+const excelInput = document.getElementById("excelFile");
+const form = document.getElementById("dxfForm");
+// New UI elements
+const doorType = document.getElementById("doorType");
+const subType = document.getElementById("subType");
+const fireOption = document.getElementById("fireOption");
+const fireOptionsContainer = document.getElementById("fireOptionsContainer");
+const holeOffset = document.getElementById("holeOffset");
+const defaultAllowance = document.getElementById("defaultAllowance");
+const allowanceInputs = document.getElementById("allowanceInputs");
+const horizontalAllowancesHeader = document.getElementById(
+  "horizontalAllowancesHeader"
+);
+const verticalAllowancesHeader = document.getElementById(
+  "verticalAllowancesHeader"
+);
+const verticalAllowanceInputs = document.getElementById(
+  "verticalAllowanceInputs"
+);
+const sheetSize = document.getElementById("sheetSize");
+
+let currentMode = "single";
+let touchStartX = 0;
+let touchEndX = 0;
+
+// Validation rules
+const MIN_DIM = 200;
+const MAX_DIM = 3000;
+const MIN_ALLOW = 0;
+const MAX_ALLOW = 50;
+
+function markInvalid(el) {
+  if (!el) return;
+  el.style.outline = "2px solid rgba(220,20,60,0.9)";
+  el.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+function clearInvalid(el) {
+  if (!el) return;
+  el.style.outline = "";
+}
+
+function validateInputs() {
+  // returns { ok: bool, messages: [string], firstEl: HTMLElement|null }
+  const msgs = [];
+  let firstEl = null;
+
+  // width and height required
+  const widthIn = document.querySelector('input[name="width_measurement"]');
+  const heightIn = document.querySelector('input[name="height_measurement"]');
+  const width = Number(widthIn && widthIn.value);
+  const height = Number(heightIn && heightIn.value);
+
+  // clear prior outlines
+  clearInvalid(widthIn);
+  clearInvalid(heightIn);
+
+  if (!Number.isFinite(width) || width <= 0) {
+    msgs.push("Width is required and must be a number.");
+    firstEl = firstEl || widthIn;
+    markInvalid(widthIn);
+  } else if (width < MIN_DIM || width > MAX_DIM) {
+    msgs.push(`Width must be between ${MIN_DIM} and ${MAX_DIM} mm.`);
+    firstEl = firstEl || widthIn;
+    markInvalid(widthIn);
+  }
+
+  if (!Number.isFinite(height) || height <= 0) {
+    msgs.push("Height is required and must be a number.");
+    firstEl = firstEl || heightIn;
+    markInvalid(heightIn);
+  } else if (height < MIN_DIM || height > MAX_DIM) {
+    msgs.push(`Height must be between ${MIN_DIM} and ${MAX_DIM} mm.`);
+    firstEl = firstEl || heightIn;
+    markInvalid(heightIn);
+  }
+
+  // Door type / Sub type validation (selects)
+  const doorTypeEl = document.getElementById("doorType");
+  const subTypeEl = document.getElementById("subType");
+  // clear prior outlines for selects
+  if (doorTypeEl) clearInvalid(doorTypeEl);
+  if (subTypeEl) clearInvalid(subTypeEl);
+
+  if (doorTypeEl && (!doorTypeEl.value || doorTypeEl.value.trim() === "")) {
+    msgs.push("Door type is required.");
+    firstEl = firstEl || doorTypeEl;
+    markInvalid(doorTypeEl);
+  }
+
+  if (subTypeEl && (!subTypeEl.value || subTypeEl.value.trim() === "")) {
+    msgs.push("Sub type is required.");
+    firstEl = firstEl || subTypeEl;
+    markInvalid(subTypeEl);
+  }
+
+  // allowances: if allowance inputs visible (defaultAllowance === 'no') validate them
+  const defaultAllow = defaultAllowance && defaultAllowance.value === "yes";
+  if (!defaultAllow) {
+    const allowNames = [
+      "left_side_allowance_width",
+      "right_side_allowance_width",
+      "top_side_allowance_height",
+      "bottom_side_allowance_height",
+    ];
+    for (const name of allowNames) {
+      const el = document.querySelector(`input[name="${name}"]`);
+      if (!el) continue;
+      clearInvalid(el);
+      const v = Number(el.value);
+      if (!Number.isFinite(v)) {
+        msgs.push(`${name.replace(/_/g, " ")} must be a number.`);
+        firstEl = firstEl || el;
+        markInvalid(el);
+      } else if (v < MIN_ALLOW || v > MAX_ALLOW) {
+        msgs.push(
+          `${name.replace(
+            /_/g,
+            " "
+          )} must be between ${MIN_ALLOW} and ${MAX_ALLOW} mm.`
+        );
+        firstEl = firstEl || el;
+        markInvalid(el);
+      }
+    }
+  }
+
+  return { ok: msgs.length === 0, messages: msgs, firstEl };
+}
+
+function setTogglePosition() {
+  const activeOption = document.querySelector(".toggle-option.active");
+  const sliderWidth = activeOption.offsetWidth;
+  const sliderLeft = activeOption.offsetLeft;
+
+  toggleSlider.style.width = sliderWidth + "px";
+  toggleSlider.style.transform = `translateX(${sliderLeft - 4}px)`;
+}
+
+function switchMode(mode) {
+  if (currentMode === mode) return;
+
+  currentMode = mode;
+
+  toggleOptions.forEach((option) => {
+    if (option.dataset.value === mode) {
+      option.classList.add("active");
+    } else {
+      option.classList.remove("active");
+    }
+  });
+
+  setTogglePosition();
+
+  if (mode === "bulk") {
+    bulkInputsDiv.classList.remove("hidden");
+    bulkInputsDiv.classList.add("fade-in");
+    singleInputsDiv.classList.add("hidden");
+    excelInput.required = true;
+    toggleHint.textContent = "Upload Excel file";
+    // mark body for bulk-mode so CSS can hide preview controls robustly
+    document.body.classList.add("bulk-mode");
+  } else {
+    singleInputsDiv.classList.remove("hidden");
+    singleInputsDiv.classList.add("fade-in");
+    bulkInputsDiv.classList.add("hidden");
+    excelInput.required = false;
+    toggleHint.textContent = "Enter parameters below";
+    document.body.classList.remove("bulk-mode");
+  }
+
+  // Hide preview controls in bulk mode, show them in single mode.
   // Use getElementById here to avoid referencing variables that may be declared later.
   const previewBtnEl = document.getElementById("previewBtn");
   const previewContainerEl = document.getElementById("previewContainer");
@@ -220,45 +399,30 @@ form.addEventListener("submit", async (e) => {
     defaultAllowance && defaultAllowance.value === "yes" ? 25 : 0;
 
   // Extract width & height for filename
-const width = toNumberOrDefault(data.width_measurement, 0);
-const height = toNumberOrDefault(data.height_measurement, 0);
+  const width = toNumberOrDefault(data.width_measurement, 0);
+  const height = toNumberOrDefault(data.height_measurement, 0);
+  const timestamp = Date.now();
 
-
-// Determine door type and subtype safely
-const category =
-  doorType && doorType.value
-    ? doorType.value === "double"
-      ? "Double"
-      : "Single"
-    : "Single";
-
-const subtype = subType && subType.value ? subType.value : "Normal";
-
-// Sanitize all values to avoid invalid filename characters
-const safeWidth = String(width).replace(/\./g, "_");
+  const safeWidth = String(width).replace(/\./g, "_");
 const safeHeight = String(height).replace(/\./g, "_");
-const safeCategory = category.replace(/[^a-zA-Z0-9_-]/g, "");
-const safeSubtype = subtype.replace(/[^a-zA-Z0-9_-]/g, "");
+const dynamicFileName = `Single_Normal_${safeWidth}x${safeHeight}_${timestamp}.dxf`;
 
-// Build formatted timestamp
-const formattedTimestamp = getFormattedTimestamp();
-
-// Build dynamic filename
-const dynamicFileName = `${safeCategory}_${safeSubtype}_${safeWidth}x${safeHeight}_${formattedTimestamp}.dxf`;
-
-
-const requestPayload = {
-  mode: "generate",
-  door: {
-    category,
-    type: subtype,
-    option:
-      fireOption && !fireOptionsContainer.classList.contains("hidden")
-        ? fireOption.value || null
-        : null,
-    hole_offset: holeOffset ? holeOffset.value : "",
-    default_allowance: defaultAllowance ? defaultAllowance.value : "yes",
-  },
+  const requestPayload = {
+    mode: "generate",
+    door: {
+      category: doorType
+        ? doorType.value === "double"
+          ? "Double"
+          : "Single"
+        : "Single",
+      type: subType ? subType.value || "Normal" : "Normal",
+      option:
+        fireOption && !fireOptionsContainer.classList.contains("hidden")
+          ? fireOption.value || null
+          : null,
+      hole_offset: holeOffset ? holeOffset.value : "",
+      default_allowance: defaultAllowance ? defaultAllowance.value : "yes",
+    },
     dimensions: {
       width_measurement: width,
       height_measurement: height,
@@ -1095,15 +1259,3 @@ function showToast(msg, type = "success") {
 document.querySelector("h2").addEventListener("click", () => {
   showToast("Developed by Jinesh 🧠", "success");
 });
-
-// Helper to format timestamp as ddmmyy_hhmmss
-function getFormattedTimestamp() {
-  const now = new Date();
-  const dd = String(now.getDate()).padStart(2, "0");
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const yy = String(now.getFullYear()).slice(-2);
-  const hh = String(now.getHours()).padStart(2, "0");
-  const min = String(now.getMinutes()).padStart(2, "0");
-  const ss = String(now.getSeconds()).padStart(2, "0");
-  return `${dd}${mm}${yy}_${hh}${min}${ss}`;
-}

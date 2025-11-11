@@ -299,11 +299,11 @@ def _hole_dimensions_annotations(hole: Any, offset_base: float = 4.0):
     })
     return [ann]
 
-
-def _frame_gap_annotation(frame1: Any, frame2: Any, offset_base: float = 6.0):
+def _frame_gap_annotation(frame1: Any, frame2: Any, offset_base: float = 6.0, spacing: float = 20.0):
     """Create an annotation that measures the gap between two frame bboxes.
 
     Returns a list with zero or one Annotation (empty if frames overlap).
+    spacing: additional offset distance to separate dimension lines from geometry.
     """
     min_x1, min_y1, max_x1, max_y1 = _bbox(frame1.points)
     min_x2, min_y2, max_x2, max_y2 = _bbox(frame2.points)
@@ -318,32 +318,30 @@ def _frame_gap_annotation(frame1: Any, frame2: Any, offset_base: float = 6.0):
 
     owner = f"{getattr(frame1, 'name', 'frame1')}_{getattr(frame2, 'name', 'frame2')}"
 
-    # Determine overlap midpoints where possible
-    overlap_y_min = max(min_y1, min_y2)
-    overlap_y_max = min(max_y1, max_y2)
-    if overlap_y_max > overlap_y_min:
-        mid_y = (overlap_y_min + overlap_y_max) / 2.0
-    else:
-        mid_y = (c1y + c2y) / 2.0
-
-    overlap_x_min = max(min_x1, min_x2)
-    overlap_x_max = min(max_x1, max_x2)
-    if overlap_x_max > overlap_x_min:
-        mid_x = (overlap_x_min + overlap_x_max) / 2.0
-    else:
-        mid_x = (c1x + c2x) / 2.0
+    # Determine overlap midpoints (simplified)
+    mid_y = (max(min_y1, min_y2) + min(max_y1, max_y2)) / 2.0
+    mid_x = (max(min_x1, min_x2) + min(max_x1, max_x2)) / 2.0
 
     # Left edge gap: distance between the two left edges
     left_gap = round(abs(min_x2 - min_x1), 3)
     if left_gap > 0:
-        lx_from = (min(min_x1, min_x2), mid_y)
-        lx_to = (max(min_x1, min_x2), mid_y)
+        # place the horizontal gap annotation near the bottom corner instead
+        # of at the vertical midpoint to avoid overlap with other middle annotations.
+        corner_offset = 50.0
+        bottom_y = min(min_y1, min_y2)
+        top_y = max(max_y1, max_y2)
+        y_pos = bottom_y + corner_offset
+        # clamp inside bbox with small margin
+        if y_pos >= top_y - 5.0:
+            y_pos = (bottom_y + top_y) / 2.0
+        lx_from = (min(min_x1, min_x2), y_pos)
+        lx_to = (max(min_x1, min_x2), y_pos)
         anns.append(Annotation.parse_obj({
             "type": "dimension",
             "from": lx_from,
             "to": lx_to,
             "text": f"G {left_gap}",
-            "offset": offset_base,
+            "offset": offset_base + spacing,
             "angle": 0.0,
             "category": "frame_gap",
             "owner": owner,
@@ -352,14 +350,22 @@ def _frame_gap_annotation(frame1: Any, frame2: Any, offset_base: float = 6.0):
     # Right edge gap: distance between the two right edges
     right_gap = round(abs(max_x1 - max_x2), 3)
     if right_gap > 0:
-        rx_from = (min(max_x1, max_x2), mid_y)
-        rx_to = (max(max_x1, max_x2), mid_y)
+        # place the horizontal gap annotation near the top corner instead
+        # of at the vertical midpoint to avoid overlap with other middle annotations.
+        corner_offset = 50.0
+        bottom_y = min(min_y1, min_y2)
+        top_y = max(max_y1, max_y2)
+        y_pos = top_y - corner_offset
+        if y_pos <= bottom_y + 5.0:
+            y_pos = (bottom_y + top_y) / 2.0
+        rx_from = (min(max_x1, max_x2), y_pos)
+        rx_to = (max(max_x1, max_x2), y_pos)
         anns.append(Annotation.parse_obj({
             "type": "dimension",
             "from": rx_from,
             "to": rx_to,
             "text": f"G {right_gap}",
-            "offset": offset_base,
+            "offset": -(offset_base + spacing),
             "angle": 0.0,
             "category": "frame_gap",
             "owner": owner,
@@ -368,14 +374,21 @@ def _frame_gap_annotation(frame1: Any, frame2: Any, offset_base: float = 6.0):
     # Top edge gap: distance between the two top edges (max y)
     top_gap = round(abs(max_y1 - max_y2), 3)
     if top_gap > 0:
-        ty_from = (mid_x, min(max_y1, max_y2))
-        ty_to = (mid_x, max(max_y1, max_y2))
+        # place the vertical gap annotation near the right corner (x offset)
+        corner_offset = 50.0
+        left_x = min(min_x1, min_x2)
+        right_x = max(max_x1, max_x2)
+        x_pos = right_x - corner_offset
+        if x_pos <= left_x + 5.0:
+            x_pos = (left_x + right_x) / 2.0
+        ty_from = (x_pos, min(max_y1, max_y2))
+        ty_to = (x_pos, max(max_y1, max_y2))
         anns.append(Annotation.parse_obj({
             "type": "dimension",
             "from": ty_from,
             "to": ty_to,
             "text": f"G {top_gap}",
-            "offset": offset_base,
+            "offset": offset_base + spacing,
             "angle": 90.0,
             "category": "frame_gap",
             "owner": owner,
@@ -384,14 +397,22 @@ def _frame_gap_annotation(frame1: Any, frame2: Any, offset_base: float = 6.0):
     # Bottom edge gap: distance between the two bottom edges (min y)
     bottom_gap = round(abs(min_y2 - min_y1), 3)
     if bottom_gap > 0:
-        by_from = (mid_x, min(min_y1, min_y2))
-        by_to = (mid_x, max(min_y1, min_y2))
+        # place the vertical gap annotation near the right corner (x offset)
+        # (user requested bottom annotations placed on the right similar to top)
+        corner_offset = 50.0
+        left_x = min(min_x1, min_x2)
+        right_x = max(max_x1, max_x2)
+        x_pos = right_x - corner_offset
+        if x_pos <= left_x + 5.0:
+            x_pos = (left_x + right_x) / 2.0
+        by_from = (x_pos, min(min_y1, min_y2))
+        by_to = (x_pos, max(min_y1, min_y2))
         anns.append(Annotation.parse_obj({
             "type": "dimension",
             "from": by_from,
             "to": by_to,
             "text": f"G {bottom_gap}",
-            "offset": offset_base,
+            "offset": -(offset_base + spacing),
             "angle": 90.0,
             "category": "frame_gap",
             "owner": owner,
@@ -895,10 +916,14 @@ def generate_annotations(frames: List[Any], cutouts: List[Any], holes: List[Any]
     if key_cut:
         annotations["keybox"].extend(_keybox_annotations(key_cut, frames, outer_frame))
 
-    # --- 🧩 Frame gap annotations (your original logic) ---
+    # --- 🧩 Frame gap annotations (updated to support spacing) ---
     if frames and len(frames) >= 2:
-        annotations["frame_gaps"].extend(_frame_gap_annotation(frames[0], frames[1], offset_base=6.0))
+        annotations["frame_gaps"].extend(
+            _frame_gap_annotation(frames[0], frames[1], offset_base=6.0, spacing=20.0)
+        )
     if frames and len(frames) >= 4:
-        annotations["frame_gaps"].extend(_frame_gap_annotation(frames[2], frames[3], offset_base=6.0))
+        annotations["frame_gaps"].extend(
+            _frame_gap_annotation(frames[2], frames[3], offset_base=6.0, spacing=30.0)
+        )
 
     return annotations

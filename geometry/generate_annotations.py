@@ -95,8 +95,10 @@ def _cutout_dimensions_annotations(cutout: Any, left_frame: Any = None, offset_b
     w_to = (max_x, min_y)
     w_text = f"W {width}"
 
-    h_from = (min_x, min_y)
-    h_to = (min_x, max_y)
+    # place vertical dimension on the right edge so the H value appears on the
+    # rectangle's right side (use max_x instead of min_x)
+    h_from = (max_x, min_y)
+    h_to = (max_x, max_y)
     h_text = f"H {height}"
 
     width_ann = Annotation.parse_obj({
@@ -104,7 +106,7 @@ def _cutout_dimensions_annotations(cutout: Any, left_frame: Any = None, offset_b
         "from": w_from,
         "to": w_to,
         "text": w_text,
-        "offset": -offset_base,
+        "offset": offset_base,
         "angle": 0.0,
         "category": "cutout",
         "owner": _get_name(cutout) or "cutout",
@@ -115,7 +117,8 @@ def _cutout_dimensions_annotations(cutout: Any, left_frame: Any = None, offset_b
         "from": h_from,
         "to": h_to,
         "text": h_text,
-        "offset": -offset_base,
+        # use positive offset to push the vertical dimension line to the right
+        "offset": offset_base,
         "angle": 90.0,
         "category": "cutout",
         "owner": _get_name(cutout) or "cutout",
@@ -342,7 +345,7 @@ def _frame_gap_annotation(frame1: Any, frame2: Any, offset_base: float = 6.0, sp
             "from": lx_from,
             "to": lx_to,
             "text": f"G {left_gap}",
-            "offset": offset_base + spacing,
+            "offset": offset_base,  #+ spacing,
             "angle": 0.0,
             "category": "frame_gap",
             "owner": owner,
@@ -738,7 +741,8 @@ def _hole_offset_annotations(hole: Any, frames: List[Any], inner_frame: Any, out
                 "from": (hx, hy),
                 "to": (hx, outer_top),
                 "text": f"Y {dy}",
-                "offset": 6.0,
+                # place vertical dimension line on the left side of the hole
+                "offset": -6.0,
                 "angle": 90.0,
                 "category": "hole",
                 "owner": _get_name(hole) or "hole",
@@ -751,7 +755,8 @@ def _hole_offset_annotations(hole: Any, frames: List[Any], inner_frame: Any, out
                 "from": (hx, outer_bot),
                 "to": (hx, hy),
                 "text": f"Y {dyb}",
-                "offset": 6.0,
+                # place vertical dimension line on the left side of the hole
+                "offset": -6.0,
                 "angle": 90.0,
                 "category": "hole",
                 "owner": _get_name(hole) or "hole",

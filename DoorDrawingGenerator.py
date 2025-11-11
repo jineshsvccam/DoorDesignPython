@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from numpy import true_divide
+
 """DoorDrawingGenerator.py
 
 Generate DXF files for door designs with annotated dimensions and cutouts.
@@ -16,8 +18,25 @@ from fastapi_app.schemas_input import DoorDXFRequest
 from fastapi_app.schemas_output import SchemasOutput
 import logging
 from DoorDrawingPDF import DoorDrawingPDF
+from annotation_styles import styles, CURRENT_STYLE_INDEX
 
 logger = logging.getLogger(__name__)
+
+
+def ensure_dimstyle(doc, name="DoorDimStyle"):
+    try:
+        # doc.dimstyles supports membership test and .new()
+        if name not in doc.dimstyles:
+            ds = doc.dimstyles.new(name)
+            ds.dxf.dimtxsty = "Standard"   # link to text style
+            ds.dxf.dimclrd = 7             # dimension line color
+            ds.dxf.dimclre = 7             # extension line color
+            ds.dxf.dimclrt = 7             # text color
+            print(f"✅ Created new dimstyle '{name}'")
+        return name
+    except Exception as e:
+        print(f"❌ Failed to create dimstyle '{name}':", e)
+        return "Standard"
 
 class DoorDrawingGenerator:
     """
@@ -108,6 +127,12 @@ class DoorDrawingGenerator:
                 pass
             msp = doc.modelspace()
 
+        # Ensure our dimension style exists and remember its name
+        try:
+            style_name = ensure_dimstyle(doc, "DoorDimStyle")
+        except Exception:
+            style_name = "Standard"
+
         # Visual defaults: prefer values from request.defaults if available
         defaults = None
         if request is not None:
@@ -141,7 +166,7 @@ class DoorDrawingGenerator:
             msp.add_circle(center, hole.radius, dxfattribs={"layer": hole.layer})
 
         # Draw all annotations
-        draw_annotations(msp, schema, isannotationRequired=isannotationRequired, dim_text_height=3.0, transform_point_func=_t)
+        draw_annotations(msp, schema, isannotationRequired=isannotationRequired, dim_text_height=3.0, transform_point_func=_t, dimstyle=style_name)
         
         # Draw labels from schema.geometry.labels
         # Disabled: comment out placement loop and handle one label later if needed
@@ -448,7 +473,7 @@ def _try_post_render_scan(before_handles, msp):
         return len(after - before_handles)
     except Exception:
         return 0
-def draw_annotations(msp, schema, isannotationRequired=True, dim_text_height=3.0, transform_point_func=None):
+def draw_annotations(msp, schema, isannotationRequired=True, dim_text_height=3.0, transform_point_func=None, dimstyle: str = "Standard"):
     """
     Draws all annotations (dimensions, notes, leaders) from schema.geometry.annotations.
 
@@ -467,6 +492,30 @@ def draw_annotations(msp, schema, isannotationRequired=True, dim_text_height=3.0
 
     # Define the transformation function if not provided
     _t = transform_point_func if transform_point_func else lambda p: p
+
+    # select active style from annotation_styles (ensure non-None dict)
+    style = styles.get(CURRENT_STYLE_INDEX) or styles.get(0) or {"dimtxt": dim_text_height, "dimasz": 2.0, "dimexe": 1.0, "dimexo": 1.0, "dimtad": 1, "dimtofl": 1, "text_height": dim_text_height, "text_style": "Standard", "color": 7}
+
+    # --- Apply global or dynamic scaling ---
+    # tweak ANNOTATION_SCALE here for global enlargement, or set
+    # schema.metadata.annotation_scale to override per-schema
+    ANNOTATION_SCALE = 2.0
+    try:
+        # allow per-schema override if present and numeric
+        meta_scale = float(getattr(schema.metadata, "annotation_scale", ANNOTATION_SCALE) or ANNOTATION_SCALE)
+    except Exception:
+        meta_scale = ANNOTATION_SCALE
+
+    # operate on a copy so we don't mutate the module-level styles
+    scaled_style = dict(style) if isinstance(style, dict) else {}
+    try:
+        scale = meta_scale
+        for key in ["dimtxt", "dimasz", "dimexe", "dimexo", "text_height"]:
+            if key in scaled_style and isinstance(scaled_style[key], (int, float)):
+                scaled_style[key] = scaled_style[key] * scale
+    except Exception:
+        # if scaling fails, fall back to original style
+        scaled_style = dict(style)
 
     # annotations are grouped in a dict: { category: [Annotation,...] }
     anns_by_group = getattr(schema.geometry, "annotations", {}) or {}
@@ -499,25 +548,41 @@ def draw_annotations(msp, schema, isannotationRequired=True, dim_text_height=3.0
                         base = p1
 
                     try:
+                        # use style overrides when creating dimension
                         dim = msp.add_linear_dim(
                             base=base,
                             p1=p1,
                             p2=p2,
                             angle=angle,
-                            dimstyle="Standard",
+                            dimstyle=dimstyle,
                             override={
-                                "dimtxt": 100.0,
-                                "dimasz": 35.0,
-                                "dimexe": 5.0,
-                                "dimexo": 20.0,
-                                "dimtad": 1,
-                                "dimtofl": 1,
+                                "dimtxt": scaled_style.get("dimtxt"),
+                                "dimasz": scaled_style.get("dimasz"),
+                                "dimexe": scaled_style.get("dimexe"),
+                                "dimexo": scaled_style.get("dimexo"),
+                                "dimtad": scaled_style.get("dimtad"),
+                                "dimtofl": scaled_style.get("dimtofl"),
                             },
                         )
-                        dim.dimension.render()
+                        # try to render and set location similar to prior behaviour
+                        try:
+                            dim.render()
+                        except Exception as e:
+                            print(f"⚠️ Dimension render failed: {e}")
+
                         offset_dir = (0, distance) if angle == 0 else (distance, 0)
-                        dim.set_location(offset_dir, relative=True)
-                        dim.dimension.dxf.layer = "DIMENSIONS"
+                        try:
+                            dim.set_location(offset_dir, relative=True)
+                        except Exception:
+                            pass
+                        try:
+                            # set layer on created dimension entity if available
+                            if hasattr(dim, "dimension"):
+                                dim.dimension.dxf.layer = "DIMENSIONS"
+                            else:
+                                dim.dxf.layer = "DIMENSIONS"
+                        except Exception:
+                            pass
 
                     except Exception as e:
                         print("❌ Dimension creation failed:", e)
@@ -529,7 +594,12 @@ def draw_annotations(msp, schema, isannotationRequired=True, dim_text_height=3.0
                     note_text = getattr(ann, "text", "")
                     txt = msp.add_text(
                         note_text,
-                        dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"},
+                        dxfattribs={
+                            "layer": "DIMENSIONS",
+                            "height": scaled_style.get("text_height", dim_text_height),
+                            "style": scaled_style.get("text_style", "Standard"),
+                            "color": scaled_style.get("color", 7),
+                        },
                     )
                     txt.dxf.insert = pos
                     txt.dxf.halign = 0
@@ -545,7 +615,12 @@ def draw_annotations(msp, schema, isannotationRequired=True, dim_text_height=3.0
                     msp.add_line(p_from, p_to, dxfattribs={"layer": "DIMENSIONS"})
                     txt = msp.add_text(
                         leader_text,
-                        dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"},
+                        dxfattribs={
+                            "layer": "DIMENSIONS",
+                            "height": scaled_style.get("text_height", dim_text_height),
+                            "style": scaled_style.get("text_style", "Standard"),
+                            "color": scaled_style.get("color", 7),
+                        },
                     )
                     txt.dxf.insert = p_to
                     txt.dxf.halign = 0
@@ -577,6 +652,6 @@ if __name__ == "__main__":
         )
 
         # save_pdf is a parameter on generate_door_dxf (not part of metadata)
-        DoorDrawingGenerator.generate_door_dxf(req, file_name="door_F14P2.dxf", save_pdf=False)
+        DoorDrawingGenerator.generate_door_dxf(req, file_name="door_F14P2.dxf", save_pdf=True)
     except Exception as e:
         print(f"Error: {e}")

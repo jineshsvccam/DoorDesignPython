@@ -1,0 +1,38 @@
+{
+  "0": {
+    "name": "Default",
+    "dimtxt": 3.0,
+    "dimasz": 2.0,
+    "dimexe": 1.0,
+    "dimexo": 1.0,
+    "dimtad": 1,
+    "dimtofl": 1,
+    "text_height": 3.0,
+    "text_style": "Standard",
+    "color": 7
+  },
+  "1": {
+    "name": "Bold",
+    "dimtxt": 5.0,
+    "dimasz": 3.0,
+    "dimexe": 1.5,
+    "dimexo": 1.5,
+    "dimtad": 1,
+    "dimtofl": 1,
+    "text_height": 5.0,
+    "text_style": "BoldText",
+    "color": 1
+  },
+  "2": {
+    "name": "Fine",
+    "dimtxt": 2.0,
+    "dimasz": 1.0,
+    "dimexe": 0.5,
+    "dimexo": 0.5,
+    "dimtad": 1,
+    "dimtofl": 1,
+    "text_height": 2.0,
+    "text_style": "Standard",
+    "color": 5
+  }
+}

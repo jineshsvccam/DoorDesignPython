@@ -1,6 +1,5 @@
-from typing import Optional
+from typing import Optional, Any, cast
 from ezdxf.document import Drawing
-
 
 class DoorDrawingPDF:
     """Utility class to export DXF drawings to PDF using ezdxf's Matplotlib backend."""
@@ -8,34 +7,69 @@ class DoorDrawingPDF:
     @staticmethod
     def export_to_pdf(doc: Drawing, pdf_file_name: str) -> None:
         """
-        Export the current DXF Drawing (doc) to a PDF using ezdxf's Matplotlib backend.
-        If matplotlib or the backends are not available, this will print an error.
+        Export the DXF Drawing (doc) to a high-quality A4 PDF
+        with a white background and visible black lines for printing.
         """
         try:
-            # RenderContext is exported from ezdxf.addons.drawing.properties
-            # (Pylance recommends importing it from there to avoid private import warnings).
             from ezdxf.addons.drawing.properties import RenderContext
             from ezdxf.addons.drawing.frontend import Frontend
             from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
             import matplotlib.pyplot as plt
 
-            # Use modelspace as the drawing source
-            msp = doc.modelspace()
+            # Get modelspace (cast to Any for Pylance/type checkers)
+            msp = cast(Any, doc.modelspace())
             ctx = RenderContext(doc)
 
-            # Create a matplotlib figure with tight layout
-            fig = plt.figure(figsize=(8, 8))
-            # use a tuple for the rect to satisfy type checkers (tuple[float, ...])
-            ax = fig.add_axes((0.0, 0.0, 1.0, 1.0))
-            out = MatplotlibBackend(ax)
+            # --- A4 Page Setup ---
+            A4_WIDTH_INCH = 8.27
+            A4_HEIGHT_INCH = 11.69
 
-            # Render the DXF into the Matplotlib canvas
+            # Create a Matplotlib figure with white background
+            fig, ax = plt.subplots(figsize=(A4_WIDTH_INCH, A4_HEIGHT_INCH), facecolor="white")
+            ax.set_facecolor("white")  # White drawing area
+            ax.set_aspect("equal")
+            ax.axis("off")  # Hide axes for clean PDF
+
+            # Render DXF content
+            out = MatplotlibBackend(ax)
             Frontend(ctx, out).draw_layout(msp, finalize=True)
 
-            # Save as PDF
-            fig.savefig(pdf_file_name, bbox_inches="tight", pad_inches=0)
+            # --- Auto-fit to drawing bounding box ---
+            if hasattr(msp, "bbox"):
+                try:
+                    extents = msp.bbox()
+                    if getattr(extents, "has_data", False):
+                        xmin, ymin, xmax, ymax = tuple(extents.extmin) + tuple(extents.extmax)
+                        x_margin = (xmax - xmin) * 0.05
+                        y_margin = (ymax - ymin) * 0.05
+                        ax.set_xlim(xmin - x_margin, xmax + x_margin)
+                        ax.set_ylim(ymin - y_margin, ymax + y_margin)
+                    else:
+                        ax.relim()
+                        ax.autoscale_view()
+                except Exception:
+                    ax.relim()
+                    ax.autoscale_view()
+            else:
+                ax.relim()
+                ax.autoscale_view()
+
+            # --- Improve visibility ---
+            for line in ax.get_lines():
+                line.set_color("black")
+                line.set_linewidth(0.8)
+
+            # --- Save as high-DPI PDF ---
+            fig.savefig(
+                pdf_file_name,
+                bbox_inches="tight",
+                pad_inches=0.2,
+                dpi=600,  # High DPI for print clarity
+                facecolor=fig.get_facecolor(),
+            )
             plt.close(fig)
 
-            print(f"✅ PDF file '{pdf_file_name}' created successfully.")
+            print(f"✅ High-quality A4 PDF generated successfully: {pdf_file_name}")
+
         except Exception as e:
             print(f"❌ PDF export failed: {e}")

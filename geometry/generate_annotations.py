@@ -282,20 +282,21 @@ def _hole_dimensions_annotations(hole: Any, offset_base: float = 4.0):
     cx, cy = hole.center
     dia = round(hole.radius * 2.0, 3)
 
-    # Draw the diameter line across the circle (left edge to right edge)
-    p_from = (cx - hole.radius, cy)
-    p_to = (cx + hole.radius, cy)
+    # Represent hole dimensions using an explicit center (base) and radius
+    # so renderers can create diameter/radius-style dimensions directly.
+    # keep the text as a diameter label for human-readability (e.g. "Ø22.0").
+    base = (cx, cy)
     text = f"Ø{dia}"
 
     ann = Annotation.parse_obj({
         "type": "dimension",
-        "from": p_from,
-        "to": p_to,
+        "from": base,
+        "to": (hole.radius, 0),
         "text": text,
         "offset": offset_base,
         "angle": 0.0,
         "category": "hole",
-        "owner": _get_name(hole) or "hole",
+        "owner": ("%s_circle" % (_get_name(hole) or "hole")),
     })
     return [ann]
 

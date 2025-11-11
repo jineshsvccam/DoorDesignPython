@@ -539,6 +539,12 @@ def draw_annotations(msp, schema, isannotationRequired=True, dim_text_height=3.0
                     distance = float(getattr(ann, "offset", 10) or 10)
                     dim_text = getattr(ann, "text", "")
 
+                    # Pre-extract category and owner so they are available for
+                    # conditional checks below (owner may include a '_circle' suffix).
+                    category = (getattr(ann, "category", "") or "").strip().lower()
+                    owner_name = (getattr(ann, "owner", "") or "").strip()
+                    base_owner = owner_name[:-7] if (isinstance(owner_name, str) and owner_name.endswith("_circle")) else owner_name
+
                     # Compute offset base point for dimension line
                     if angle == 0:   # horizontal
                         base = (p1[0], p1[1] + distance)
@@ -548,41 +554,80 @@ def draw_annotations(msp, schema, isannotationRequired=True, dim_text_height=3.0
                         base = p1
 
                     try:
-                        # use style overrides when creating dimension
-                        dim = msp.add_linear_dim(
-                            base=base,
-                            p1=p1,
-                            p2=p2,
-                            angle=angle,
-                            dimstyle=dimstyle,
-                            override={
-                                "dimtxt": scaled_style.get("dimtxt"),
-                                "dimasz": scaled_style.get("dimasz"),
-                                "dimexe": scaled_style.get("dimexe"),
-                                "dimexo": scaled_style.get("dimexo"),
-                                "dimtad": scaled_style.get("dimtad"),
-                                "dimtofl": scaled_style.get("dimtofl"),
-                            },
-                        )
-                        # try to render and set location similar to prior behaviour
-                        try:
-                            dim.render()
-                        except Exception as e:
-                            print(f"⚠️ Dimension render failed: {e}")
+                        # If this dimension represents a hole (circle), create a diameter dimension
+                        if category == "hole" and ((isinstance(owner_name, str) and owner_name != base_owner) or (isinstance(dim_text, str) and dim_text.strip().startswith("Ø"))):
+                          
+                            ann_base = raw_from
+                            ann_to = raw_to
+                            # Require both base and to-point on the annotation; otherwise skip
+                            if not ann_base or not ann_to:
+                                continue
 
-                        offset_dir = (0, distance) if angle == 0 else (distance, 0)
-                        try:
-                            dim.set_location(offset_dir, relative=True)
-                        except Exception:
-                            pass
-                        try:
-                            # set layer on created dimension entity if available
-                            if hasattr(dim, "dimension"):
-                                dim.dimension.dxf.layer = "DIMENSIONS"
-                            else:
-                                dim.dxf.layer = "DIMENSIONS"
-                        except Exception:
-                            pass
+                            hc = _t(_as_point(ann_base))                          
+                            try:
+                                radius_val = float(ann_to[0])
+                            except Exception:
+                                continue
+
+                            # create diameter dimension using annotation-provided geometry
+                            dim = msp.add_diameter_dim(
+                                center=(float(hc[0]), float(hc[1])),
+                                radius=radius_val,
+                                angle=float(angle or 0),
+                                dimstyle="EZ_RADIUS_INSIDE",
+                                override={"dimtih": 1},
+                            )
+                            try:
+                                dim.render()
+                            except Exception:
+                                # rendering errors are non-fatal; skip further handling
+                                pass
+                            try:
+                                if hasattr(dim, "dimension"):
+                                    dim.dimension.dxf.layer = "DIMENSIONS"
+                                else:
+                                    dim.dxf.layer = "DIMENSIONS"
+                            except Exception:
+                                pass
+                            # done with hole diameter dimension
+                            continue
+
+                        else:
+                            # use style overrides when creating linear dimension
+                            dim = msp.add_linear_dim(
+                                base=base,
+                                p1=p1,
+                                p2=p2,
+                                angle=angle,
+                                dimstyle=dimstyle,
+                                override={
+                                    "dimtxt": scaled_style.get("dimtxt"),
+                                    "dimasz": scaled_style.get("dimasz"),
+                                    "dimexe": scaled_style.get("dimexe"),
+                                    "dimexo": scaled_style.get("dimexo"),
+                                    "dimtad": scaled_style.get("dimtad"),
+                                    "dimtofl": scaled_style.get("dimtofl"),
+                                },
+                            )
+                            # try to render and set location similar to prior behaviour
+                            try:
+                                dim.render()
+                            except Exception as e:
+                                print(f"⚠️ Dimension render failed: {e}")
+
+                            offset_dir = (0, distance) if angle == 0 else (distance, 0)
+                            try:
+                                dim.set_location(offset_dir, relative=True)
+                            except Exception:
+                                pass
+                            try:
+                                # set layer on created linear-dimension entity if available
+                                if hasattr(dim, "dimension"):
+                                    dim.dimension.dxf.layer = "DIMENSIONS"
+                                else:
+                                    dim.dxf.layer = "DIMENSIONS"
+                            except Exception:
+                                pass
 
                     except Exception as e:
                         print("❌ Dimension creation failed:", e)

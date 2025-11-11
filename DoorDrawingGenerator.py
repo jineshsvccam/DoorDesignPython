@@ -573,8 +573,8 @@ def draw_annotations(msp, schema, isannotationRequired=True, dim_text_height=3.0
                             dim = msp.add_diameter_dim(
                                 center=(float(hc[0]), float(hc[1])),
                                 radius=radius_val,
-                                angle=float(angle or 0),
-                                dimstyle="EZ_RADIUS_INSIDE",
+                                angle=45,
+                                dimstyle="EZ_RADIUS",
                                 override={"dimtih": 1},
                             )
                             try:

@@ -212,7 +212,8 @@ def compute_door_geometry(request: DoorDXFRequest, rotated=False, offset=(0.0, 0
             frame_objs.append(Frame(name=key, layer="CUT", points=pts, width=w, height=h))
 
     # --- Labels & annotations ---
-    labels = create_labels(request)
+    metadata = create_metadata(request, frames, offset, rotated)
+    labels = create_labels(request,metadata)
     annotations = generate_annotations(frame_objs, pre_cutouts, pre_holes)
     geometry = Geometry(
         frames=frame_objs,
@@ -222,8 +223,6 @@ def compute_door_geometry(request: DoorDXFRequest, rotated=False, offset=(0.0, 0
         labels=labels,
     )
 
-    # --- Metadata & final output ---
-    metadata = create_metadata(request, frames, offset, rotated)
     door_type, normalized_option = normalize_door_type_and_option(params)
 
     return SchemasOutput(

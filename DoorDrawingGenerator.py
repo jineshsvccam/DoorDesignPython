@@ -13,6 +13,7 @@ from typing import Tuple, Optional, Union
 from collections.abc import Iterable
 from ezdxf.document import Drawing
 from ezdxf.layouts.layout import Modelspace
+from ezdxf.enums import TextEntityAlignment
 from geometry.door_geometry import compute_door_geometry
 from fastapi_app.schemas_input import DoorDXFRequest
 from fastapi_app.schemas_output import SchemasOutput
@@ -168,35 +169,8 @@ class DoorDrawingGenerator:
         # Draw all annotations
         draw_annotations(msp, schema, isannotationRequired=isannotationRequired, dim_text_height=3.0, transform_point_func=_t, dimstyle=style_name)
         
-        # Draw labels from schema.geometry.labels
-        # Disabled: comment out placement loop and handle one label later if needed
-        # for label in getattr(schema.geometry, "labels", []) or []:
-        #     try:
-        #         ltype = getattr(label, "type", "center_label")
-        #         ltext = getattr(label, "text", "")
-        #         if ltype == "center_label":
-        #             # place centered text inside the door; build simple transform to account for metadata offset
-        #             offs = getattr(schema.metadata, "offset", (0.0, 0.0))
-        #             transform = lambda p: (p[0] + offs[0], p[1] + offs[1])
-        #             DoorDrawingGenerator.add_center_label(
-        #                 msp,
-        #                 transform,
-        #                 getattr(schema.metadata, "width", 0.0),
-        #                 getattr(schema.metadata, "height", 0.0),
-        #                 ltext,
-        #                 rotated,
-        #                 dim_text_height=dim_text_height,
-        #             )
-        #         else:
-        #             # Generic placement for corner or note labels at top-left
-        #             offs = getattr(schema.metadata, "offset", (0.0, 0.0))
-        #             top_left = (offs[0] + 10.0, offs[1] + max(getattr(schema.metadata, "height", 0.0) - 10.0, 10.0))
-        #             txt = msp.add_text(ltext, dxfattribs={"layer": "DIMENSIONS", "height": dim_text_height, "style": "Standard"})
-        #             txt.dxf.insert = top_left
-        #             txt.dxf.halign = 0
-        #             txt.dxf.valign = 2
-        #     except Exception:
-        #         continue
+        # Draw labels from schema.geometry.labels using helper
+        DoorDrawingGenerator.draw_label(msp, schema,transform_point_func=_t)
 
         # Save file only if requested
         if save_file and file_name is not None:
@@ -332,6 +306,73 @@ class DoorDrawingGenerator:
             t2.dxf.rotation = text_rotation
         except Exception:
             pass
+
+    @staticmethod
+    def draw_label(msp, schema, transform_point_func=None) -> None:
+        """
+        Minimal label drawing method.
+        Uses label attributes directly as defined in Label class.
+        """
+        try:
+            labels = getattr(schema.geometry, "labels", []) or []
+        except Exception:
+            return
+
+        _t = transform_point_func if transform_point_func else (lambda p: p)
+
+        for label in labels:
+            try:
+                # Extract label properties
+                ltext = getattr(label, "text", "") or ""
+                lpos = getattr(label, "position", None)
+                lalign = getattr(label, "align", None)
+                lheight = getattr(label, "height", None)
+                lstyle = getattr(label, "style", None)
+                lrotation = getattr(label, "rotation", 0.0)
+                llayer = getattr(label, "layer", None)
+                loffset = getattr(label, "placement_offset", None)
+                lcolor = getattr(label, "color", None)
+
+                # Validate position
+                if not isinstance(lpos, (list, tuple)):
+                    continue
+
+                # Apply optional offset
+                x, y = float(lpos[0]), float(lpos[1])
+                if loffset and isinstance(loffset, (list, tuple)):
+                    x += float(loffset[0])
+                    y += float(loffset[1])
+
+                # Apply transform
+                x, y = _t((x, y))
+
+                # Create text entity
+                dxf_attribs = {}
+                if lheight: dxf_attribs["height"] = lheight
+                if lstyle: dxf_attribs["style"] = lstyle
+                if llayer: dxf_attribs["layer"] = llayer
+
+                txt = msp.add_text(ltext, dxfattribs=dxf_attribs)
+
+                if lcolor is not None:
+                    txt.dxf.color = int(lcolor)
+
+                if lrotation:
+                    txt.dxf.rotation = float(lrotation)
+
+                # Use tutorial-style placement
+                if lalign:
+                    try:
+                        align_enum = getattr(TextEntityAlignment, lalign)
+                        txt.set_placement((x, y), align=align_enum)
+                    except AttributeError:
+                        txt.set_placement((x, y))
+                else:
+                    txt.set_placement((x, y))
+
+            except Exception:
+                continue
+
 
 def _as_point(pt):
     """Normalize various point representations to an (x, y) tuple of floats.

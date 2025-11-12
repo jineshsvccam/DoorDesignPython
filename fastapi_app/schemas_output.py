@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Tuple, Literal, Dict
+from typing import List, Optional, Tuple, Literal, Dict, Union
 
 
 # ---------- Supporting Models ----------
@@ -49,10 +49,37 @@ class Annotation(BaseModel):
     owner: Optional[str] = None
 
 
-class Label(BaseModel):
+class Label(BaseModel):  
     type: Literal["center_label", "corner_label", "note"]
     text: str
-    position: str  # "center", "top_left", etc.
+    # position may be a named location (string) or an explicit (x, y) tuple
+    position: Optional[Union[str, Tuple[float, float]]] = "center"
+    # alignment string maps to ezdxf.entities.text.TextEntityAlignment values
+    align: Optional[Literal[
+        "LEFT",
+        "CENTER",
+        "RIGHT",
+        "MIDDLE_LEFT",
+        "MIDDLE_CENTER",
+        "MIDDLE_RIGHT",
+        "TOP_LEFT",
+        "TOP_CENTER",
+        "TOP_RIGHT",
+        "BOTTOM_LEFT",
+        "BOTTOM_CENTER",
+        "BOTTOM_RIGHT",
+    ]] = None
+    # text visual properties
+    height: Optional[float] = None
+    style: Optional[str] = None
+    rotation: Optional[float] = 0.0
+    layer: Optional[str] = "DIMENSIONS"
+    # optional offset applied to the placement point (useful with metadata.offset)
+    placement_offset: Optional[Tuple[float, float]] = None
+    # optional color index (DXF color number)
+    color: Optional[int] = None
+    # if true, caller/renderer may append width x height (from metadata) to the label
+    show_dimensions: Optional[bool] = False
 
 
 # ---------- Geometry Collection ----------

@@ -19,17 +19,25 @@ def create_labels(request,metadata) -> List[Label]:
     defaults = getattr(request, "defaults", None)
     dim_text_height = getattr(defaults, "dim_text_height", 8.0) if defaults is not None else 8.0
 
-    # center label: place as explicit coordinates (center of door + metadata offset)
+    # center label: originally centered; place at right border and rotate if you prefer
     text = getattr(metadata, "label", "") or getattr(metadata, "file_name", "")
     if text:
+        # keep the centered coordinates available if you need them later
         center_pos = (offs[0] + width / 2.0, offs[1] + height / 2.0)
+        # place near the right border and vertically centered
+    # leave a 50 mm gap from the right border to avoid overlap with frame
+        right_pos = (offs[0] + max(width - 50.0, 10.0), offs[1] + height / 2.0)
         labels.append(
             Label(
                 type="center_label",
                 text=text,
-                position=center_pos,
-                align="MIDDLE_CENTER",
+                # use explicit coordinates so draw_label will place this directly
+                position=right_pos,
+                # align right/center vertically so text sits against the border
+                align="MIDDLE_RIGHT",
                 height=dim_text_height,
+                # rotate 90 degrees to run text vertical (clockwise)
+                rotation=90.0,
                 layer="DIMENSIONS",
                 show_dimensions=True,
             )
@@ -39,16 +47,16 @@ def create_labels(request,metadata) -> List[Label]:
     file_name = getattr(request.metadata, "file_name", "")
     if file_name and file_name != text:
         top_left = (offs[0] + 10.0, offs[1] + max(height - 10.0, 10.0))
-        labels.append(
-            Label(
-                type="corner_label",
-                text=file_name,
-                position=top_left,
-                align="TOP_LEFT",
-                height=dim_text_height,
-                layer="DIMENSIONS",
-            )
-        )
+        # labels.append(
+        #     Label(
+        #         type="corner_label",
+        #         text=file_name,
+        #         position=top_left,
+        #         align="TOP_LEFT",
+        #         height=dim_text_height,
+        #         layer="DIMENSIONS",
+        #     )
+        # )
 
     return labels
 

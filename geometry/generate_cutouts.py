@@ -236,7 +236,7 @@ def generate_cutouts(params, frames, handles):
             else:
                 # fallback to inner-based top if outer not available
                 outer_frame_top = inner_offset_y + inner_height
-            top2_abs = outer_frame_top - getattr(defaults, "fire_glass_top_margin_double", defaults.fire_glass_top_margin)
+            top2_abs = outer_frame_top - getattr(defaults, "fire_glass_bottom_margin", defaults.fire_glass_bottom_margin) # NEED FOUR GLASS OF SAME SIZE HENCE ADJUSTED THE TOP TO BOTTOM MARGIN
             p2 = _make_panel_double(glass_left_abs, bottom2_abs, glass_right_abs - glass_left_abs, top2_abs - bottom2_abs)
 
             if p1 is None:

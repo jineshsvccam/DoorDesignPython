@@ -16,7 +16,7 @@ class DefaultInfo(BaseModel):
     # Visual and geometry defaults
     bend_adjust: float = 12.0
     box_gap: float = 30.0
-    box_width: float = 22.0
+    box_width: float = 25.0 # ADJUSTED AS PER NEW REQUIREMENT
     box_height: float = 112.0
     # Glass visual defaults
     glass_corner_radius: float = 20.0

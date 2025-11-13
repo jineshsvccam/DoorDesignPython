@@ -538,7 +538,7 @@ async def request_logging_middleware(request: StarletteRequest, call_next):
 
 
 @app.post("/generate-single-dxf/")
-async def generate_single_dxf(params: DoorDXFRequest = Body(...)):
+async def generate_single_dxf(params: DoorDXFRequest = Body(...), save_pdf: bool = Query(False, description="If true, also export and return a PDF instead of DXF")):
     """Generate one DXF from JSON parameters and return the DXF file.
 
     The generator is synchronous/blocking, so we run it in a thread to avoid
@@ -554,14 +554,35 @@ async def generate_single_dxf(params: DoorDXFRequest = Body(...)):
 
     try:
         # run the potentially blocking generation in a thread
-        await asyncio.to_thread(DoorDrawingGenerator.generate_door_dxf, params, file_name=str(out_path), isannotationRequired=True, save_file=True)
+        # pass save_pdf flag through so DoorDrawingGenerator can export a PDF when requested
+        await asyncio.to_thread(DoorDrawingGenerator.generate_door_dxf, params, file_name=str(out_path), isannotationRequired=True, save_pdf=bool(save_pdf))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DXF generation failed: {e}")
 
     if not out_path.exists():
+        # If DXF wasn't created, but PDF was requested maybe PDF exists — check that too
+        pdf_path = out_path.with_suffix('.pdf')
+        if save_pdf and pdf_path.exists():
+            return FileResponse(
+                path=str(pdf_path),
+                filename=pdf_path.name,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{pdf_path.name}"'}
+            )
         raise HTTPException(status_code=500, detail="DXF file was not created")
 
-    # Return the file and force download via Content-Disposition header
+    # If PDF requested, prefer returning the PDF when available
+    if save_pdf:
+        pdf_path = out_path.with_suffix('.pdf')
+        if pdf_path.exists():
+            return FileResponse(
+                path=str(pdf_path),
+                filename=pdf_path.name,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{pdf_path.name}"'}
+            )
+
+    # Fallback: return DXF file
     return FileResponse(
         path=str(out_path),
         filename=out_path.name,

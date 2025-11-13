@@ -181,7 +181,15 @@ class DoorDrawingGenerator:
             if save_pdf:
                 try:
                     pdf_name = file_name.replace(".dxf", ".pdf")
-                    DoorDrawingPDF.export_to_pdf(doc, pdf_name)
+                    # Prefer the faster PyQt-based exporter when available
+                    try:
+                        from tools.export_dxf_to_pdf import export_dxf_to_pdf
+
+                        # export_dxf_to_pdf accepts either a file path or an ezdxf Drawing
+                        export_dxf_to_pdf(doc, pdf_name)
+                    except Exception:
+                        # fallback to existing Matplotlib-based exporter
+                        DoorDrawingPDF.export_to_pdf(doc, pdf_name)
                 except Exception as e:
                     print(f"Failed to export PDF: {e}")
 

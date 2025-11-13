@@ -15,23 +15,15 @@ from ezdxf.addons.drawing.frontend import Frontend
 
 
 # --- Try to import PyQt backend ---
-PyQtBackend = None
-for candidate in ("ezdxf.addons.drawing.pyqt", "ezdxf.addons.drawing.qt"):
-    try:
-        m = importlib.import_module(candidate)
-        PyQtBackend = getattr(m, "PyQtBackend", None) or getattr(m, "QtBackend", None)
-        if PyQtBackend:
-            break
-    except Exception:
-        PyQtBackend = None
-
-if PyQtBackend is None:
-    print("❌ PyQt backend not found. Please install PyQt5 or PySide6.")
-    sys.exit(1)
+# NOTE: Backend detection is delayed until export_dxf_to_pdf() is called so
+# that importing this module from other scripts does not execute CLI logic
+# or exit the process. If a caller calls export_dxf_to_pdf() and the
+# PyQt backend is not available, a RuntimeError will be raised which the
+# caller can catch and handle (or the CLI will catch and exit).
 
 
 def export_dxf_to_pdf(
-    dxf_path: str,
+    dxf_source,
     pdf_path: str,
     dpi: int = 300,
     margin_mm: float = 5.0,
@@ -45,12 +37,32 @@ def export_dxf_to_pdf(
     qg = importlib.import_module("PyQt5.QtGui")
     qw = importlib.import_module("PyQt5.QtWidgets")
 
+    # --- Try to import ezdxf PyQt backend lazily ---
+    PyQtBackend = None
+    for candidate in ("ezdxf.addons.drawing.pyqt", "ezdxf.addons.drawing.qt"):
+        try:
+            m = importlib.import_module(candidate)
+            PyQtBackend = getattr(m, "PyQtBackend", None) or getattr(m, "QtBackend", None)
+            if PyQtBackend:
+                break
+        except Exception:
+            PyQtBackend = None
+
+    if PyQtBackend is None:
+        # Caller should handle this error; raise instead of sys.exit so
+        # importing this module remains side-effect free.
+        raise RuntimeError("PyQt backend not found. Please install PyQt5 or PySide6.")
+
     # --- Init QApplication ---
     app = qw.QApplication.instance() or qw.QApplication(sys.argv)
 
-    # --- Load DXF ---
-    # ezdxf stubs may be incomplete; silence static analyzer here
-    doc = ezdxf.readfile(dxf_path)  # type: ignore[attr-defined]
+    # --- Load DXF (accept either a path or an ezdxf Drawing) ---
+    if hasattr(dxf_source, "modelspace"):
+        # already a Drawing
+        doc = dxf_source
+    else:
+        # assume a file path
+        doc = ezdxf.readfile(dxf_source)  # type: ignore[attr-defined]
     ctx = RenderContext(doc)
     msp = doc.modelspace()
 

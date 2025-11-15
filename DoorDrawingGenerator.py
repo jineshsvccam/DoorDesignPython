@@ -20,6 +20,8 @@ from fastapi_app.schemas_output import SchemasOutput
 import logging
 from DoorDrawingPDF import DoorDrawingPDF
 from annotation_styles import styles, CURRENT_STYLE_INDEX
+import os
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +88,9 @@ class DoorDrawingGenerator:
             try:
                 from tools.validator import validate_schema
             except Exception:
-                import runpy, os
+                import runpy
+                # use module-level os (imported at top) to avoid creating a local
+                # 'os' binding that would shadow the module-level name
                 validator_path = os.path.join(os.path.dirname(__file__), "tools", "validator.py")
                 validator_ns = runpy.run_path(validator_path)
                 validate_schema = validator_ns.get("validate_schema")
@@ -180,18 +184,26 @@ class DoorDrawingGenerator:
             # If user also wants a PDF, generate it
             if save_pdf:
                 try:
-                    pdf_name = file_name.replace(".dxf", ".pdf")
+                    # Normalize file_name to string and swap extension reliably
+                    pdf_name = os.path.splitext(str(file_name))[0] + ".pdf"
                     # Prefer the faster PyQt-based exporter when available
                     try:
                         from tools.export_dxf_to_pdf import export_dxf_to_pdf
-
-                        # export_dxf_to_pdf accepts either a file path or an ezdxf Drawing
-                        export_dxf_to_pdf(doc, pdf_name)
-                    except Exception:
-                        # fallback to existing Matplotlib-based exporter
+                        try:
+                            # export_dxf_to_pdf accepts either a file path or an ezdxf Drawing
+                            export_dxf_to_pdf(doc, pdf_name)
+                        except Exception as inner_e:
+                            print(f"PyQt-based PDF export failed, falling back to Matplotlib exporter: {inner_e}")
+                            logger.exception("PyQt exporter runtime failure during PDF export: %s", inner_e)
+                            DoorDrawingPDF.export_to_pdf(doc, pdf_name)
+                    except Exception as import_e:
+                        # import failed or backend unavailable; fallback to Matplotlib exporter
+                        print(f"PyQt exporter import/initialization failed: {import_e}. Using Matplotlib fallback.")
+                        logger.exception("PyQt exporter import/initialization failure: %s", import_e)
                         DoorDrawingPDF.export_to_pdf(doc, pdf_name)
                 except Exception as e:
                     print(f"Failed to export PDF: {e}")
+                    logger.exception("PDF export failed: %s", e)
 
     @staticmethod
     def add_dimension_line(

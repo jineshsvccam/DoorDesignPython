@@ -132,6 +132,109 @@ function validateInputs() {
     }
   }
 
+  // Event delegation fallback: some environments may prevent direct handler
+  // attachment to the button. This ensures clicks on the PDF button are
+  // handled even if the earlier addEventListener didn't attach.
+  document.addEventListener("click", (e) => {
+    try {
+      const btn =
+        e.target && e.target.closest && e.target.closest("#generatePdfBtn");
+      if (!btn) return;
+
+      // Prevent default behaviour (if any) and run the same flow as the
+      // dedicated handler above.
+      e.preventDefault();
+
+      // Re-use the same logic by invoking an async wrapper (fire-and-forget)
+      (async () => {
+        // Only allow PDF generation in Single mode
+        if (currentMode !== "single") {
+          showToast("Generate PDF is only available in Single mode", "error");
+          return;
+        }
+
+        // validate before generating
+        const v = validateInputs();
+        if (!v.ok) {
+          showToast(
+            "Please fix input errors: " + v.messages.join(" "),
+            "error"
+          );
+          if (v.firstEl) v.firstEl.focus();
+          return;
+        }
+
+        btn.disabled = true;
+        form.classList.add("loading");
+
+        try {
+          const payload = buildRequestPayload();
+
+          const resp = await fetch("/generate-single-dxf/?save_pdf=true", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!resp.ok) throw new Error("PDF generation failed");
+
+          const blob = await resp.blob();
+          const url = window.URL.createObjectURL(blob);
+
+          const suggestedName =
+            (payload.metadata && payload.metadata.file_name) ||
+            "door_output.dxf";
+          const pdfName = suggestedName.replace(/\.dxf$/i, ".pdf");
+
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = pdfName;
+          document.body.appendChild(a);
+          try {
+            a.click();
+          } catch (e) {
+            console.warn(
+              "Delegated programmatic download failed, will fallback to opening in new tab",
+              e
+            );
+          }
+          a.remove();
+
+          try {
+            const ua = navigator.userAgent || "";
+            const isChrome =
+              ua.includes("Chrome") &&
+              !ua.includes("Edg") &&
+              !ua.includes("OPR");
+            if (isChrome && blob && blob.type === "application/pdf") {
+              setTimeout(() => {
+                try {
+                  window.open(url, "_blank");
+                } catch (e) {
+                  console.warn(
+                    "Failed to open PDF in new tab as delegated fallback",
+                    e
+                  );
+                }
+              }, 700);
+            }
+          } catch (e) {
+            /* ignore UA/open errors */
+          }
+
+          showToast(`✅ PDF (${pdfName}) generated`, "success");
+        } catch (err) {
+          showToast("❌ " + err.message, "error");
+        } finally {
+          btn.disabled = false;
+          form.classList.remove("loading");
+        }
+      })();
+    } catch (e) {
+      console.error("Error in delegated PDF click handler", e);
+    }
+  });
+
   return { ok: msgs.length === 0, messages: msgs, firstEl };
 }
 
@@ -180,13 +283,22 @@ function switchMode(mode) {
   // Use getElementById here to avoid referencing variables that may be declared later.
   const previewBtnEl = document.getElementById("previewBtn");
   const previewContainerEl = document.getElementById("previewContainer");
+  const pdfBtnEl = document.getElementById("generatePdfBtn");
   if (mode === "bulk") {
     // hide both the Preview button and the preview container in bulk mode
     if (previewBtnEl) previewBtnEl.classList.add("hidden");
     if (previewContainerEl) previewContainerEl.classList.add("hidden");
+    if (pdfBtnEl) {
+      pdfBtnEl.classList.add("hidden");
+      pdfBtnEl.setAttribute("aria-hidden", "true");
+    }
   } else {
     if (previewBtnEl) previewBtnEl.classList.remove("hidden");
     if (previewContainerEl) previewContainerEl.classList.remove("hidden");
+    if (pdfBtnEl) {
+      pdfBtnEl.classList.remove("hidden");
+      pdfBtnEl.setAttribute("aria-hidden", "false");
+    }
   }
 }
 
@@ -302,15 +414,24 @@ document.addEventListener("DOMContentLoaded", () => {
   // is set server-side or by persisted UI). Hide preview if bulk is active.
   const _previewBtn = document.getElementById("previewBtn");
   const _previewContainer = document.getElementById("previewContainer");
+  const _pdfBtn = document.getElementById("generatePdfBtn");
   const activeToggle = document.querySelector(".toggle-option.active");
   const initialMode = activeToggle ? activeToggle.dataset.value : currentMode;
   if (initialMode === "bulk") {
     if (_previewBtn) _previewBtn.classList.add("hidden");
     if (_previewContainer) _previewContainer.classList.add("hidden");
+    if (_pdfBtn) {
+      _pdfBtn.classList.add("hidden");
+      _pdfBtn.setAttribute("aria-hidden", "true");
+    }
     document.body.classList.add("bulk-mode");
   } else {
     if (_previewBtn) _previewBtn.classList.remove("hidden");
     if (_previewContainer) _previewContainer.classList.remove("hidden");
+    if (_pdfBtn) {
+      _pdfBtn.classList.remove("hidden");
+      _pdfBtn.setAttribute("aria-hidden", "false");
+    }
     document.body.classList.remove("bulk-mode");
   }
 });
@@ -388,169 +509,175 @@ form.addEventListener("submit", async (e) => {
     }
 
     try {
-  // Build request payload matching the DoorDXFRequest schema expected by the server
-  // safe numeric parse helper: preserves explicit 0, rejects NaN
-  function toNumberOrDefault(value, defaultVal) {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : defaultVal;
-  }
+      // Build request payload matching the DoorDXFRequest schema expected by the server
+      // safe numeric parse helper: preserves explicit 0, rejects NaN
+      function toNumberOrDefault(value, defaultVal) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : defaultVal;
+      }
 
-  const allowanceDefault =
-    defaultAllowance && defaultAllowance.value === "yes" ? 25 : 0;
+      const allowanceDefault =
+        defaultAllowance && defaultAllowance.value === "yes" ? 25 : 0;
 
-  // Extract width & height for filename
-  const width = toNumberOrDefault(data.width_measurement, 0);
-  const height = toNumberOrDefault(data.height_measurement, 0);
-// Determine door type and subtype safely
-const category = doorType?.value === "double" ? "Double" : "Single";
-const subtype = subType?.value || "Normal";
+      // Extract width & height for filename
+      const width = toNumberOrDefault(data.width_measurement, 0);
+      const height = toNumberOrDefault(data.height_measurement, 0);
+      // Determine door type and subtype safely
+      const category = doorType?.value === "double" ? "Double" : "Single";
+      const subtype = subType?.value || "Normal";
 
-// Sanitize values for safe filenames
-const safe = (value) => String(value).replace(/[^a-zA-Z0-9_.-]/g, "_");
-const safeWidth = safe(width).replace(/\./g, "_");
-const safeHeight = safe(height).replace(/\./g, "_");
-const safeCategory = safe(category);
-const safeSubtype = safe(subtype);
+      // Sanitize values for safe filenames
+      const safe = (value) => String(value).replace(/[^a-zA-Z0-9_.-]/g, "_");
+      const safeWidth = safe(width).replace(/\./g, "_");
+      const safeHeight = safe(height).replace(/\./g, "_");
+      const safeCategory = safe(category);
+      const safeSubtype = safe(subtype);
 
-// Generate formatted timestamp
-const formattedTimestamp = getFormattedTimestamp();
+      // Generate formatted timestamp
+      const formattedTimestamp = getFormattedTimestamp();
 
-// Build dynamic filename
-const dynamicFileName = `${safeCategory}_${safeSubtype}_${safeWidth}x${safeHeight}_${formattedTimestamp}.dxf`;
+      // Build dynamic filename
+      const dynamicFileName = `${safeCategory}_${safeSubtype}_${safeWidth}x${safeHeight}_${formattedTimestamp}.dxf`;
 
-// Construct the request payload
-const requestPayload = {
-  mode: "generate",
-  door: {
-    category,
-    type: subtype,
-    option:
-      fireOption && !fireOptionsContainer.classList.contains("hidden")
-        ? fireOption.value || null
-        : null,
-    hole_offset: holeOffset?.value || "",
-    default_allowance: defaultAllowance?.value || "yes",
-  },
-    dimensions: {
-      width_measurement: width,
-      height_measurement: height,
-      left_side_allowance_width: toNumberOrDefault(
-        data.left_side_allowance_width,
-        allowanceDefault
-      ),
-      right_side_allowance_width: toNumberOrDefault(
-        data.right_side_allowance_width,
-        allowanceDefault
-      ),
-      top_side_allowance_height: toNumberOrDefault(
-        data.top_side_allowance_height,
-        allowanceDefault
-      ),
-      bottom_side_allowance_height: toNumberOrDefault(
-        data.bottom_side_allowance_height,
-        allowanceDefault
-      ),
-    },
-    metadata: {
-      label: dynamicFileName.replace(/\.dxf$/i, ""),
-      file_name: dynamicFileName,
-      width: 0,
-      height: 0,
-      rotated: false,
-      is_annotation_required: true,
-      offset: [0.0, 0.0],
-    },
-    defaults: {
-      door_minus_measurement_width:
-        Number(data.door_minus_measurement_width) || 68,
-      door_minus_measurement_height:
-        Number(data.door_minus_measurement_height) || 70,
-      bending_width: Number(data.bending_width) || 31,
-      bending_height: Number(data.bending_height) || 24,
-    },
-  };
+      // Construct the request payload
+      const requestPayload = {
+        mode: "generate",
+        door: {
+          category,
+          type: subtype,
+          option:
+            fireOption && !fireOptionsContainer.classList.contains("hidden")
+              ? fireOption.value || null
+              : null,
+          hole_offset: holeOffset?.value || "",
+          default_allowance: defaultAllowance?.value || "yes",
+        },
+        dimensions: {
+          width_measurement: width,
+          height_measurement: height,
+          left_side_allowance_width: toNumberOrDefault(
+            data.left_side_allowance_width,
+            allowanceDefault
+          ),
+          right_side_allowance_width: toNumberOrDefault(
+            data.right_side_allowance_width,
+            allowanceDefault
+          ),
+          top_side_allowance_height: toNumberOrDefault(
+            data.top_side_allowance_height,
+            allowanceDefault
+          ),
+          bottom_side_allowance_height: toNumberOrDefault(
+            data.bottom_side_allowance_height,
+            allowanceDefault
+          ),
+        },
+        metadata: {
+          label: dynamicFileName.replace(/\.dxf$/i, ""),
+          file_name: dynamicFileName,
+          width: 0,
+          height: 0,
+          rotated: false,
+          is_annotation_required: true,
+          offset: [0.0, 0.0],
+        },
+        defaults: {
+          door_minus_measurement_width:
+            Number(data.door_minus_measurement_width) || 68,
+          door_minus_measurement_height:
+            Number(data.door_minus_measurement_height) || 70,
+          bending_width: Number(data.bending_width) || 31,
+          bending_height: Number(data.bending_height) || 24,
+        },
+      };
 
-  // Send API request
-  const response = await fetch("/generate-single-dxf/", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(requestPayload),
-  });
+      // Send API request
+      const response = await fetch("/generate-single-dxf/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestPayload),
+      });
 
-  if (!response.ok) throw new Error("DXF generation failed");
+      if (!response.ok) throw new Error("DXF generation failed");
 
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
 
-  // Trigger DXF file download using dynamic filename
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = dynamicFileName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+      // Trigger DXF file download using dynamic filename
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = dynamicFileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
 
-  showToast(`✅ DXF file (${dynamicFileName}) generated successfully`, "success");
-} catch (err) {
-  showToast("❌ " + err.message, "error");
-} finally {
-  form.classList.remove("loading");
-}
-} else if (currentMode === "bulk") {
-  if (!excelInput.files.length) {
-    showToast("⚠️ Please select an Excel file!", "error");
-    form.classList.remove("loading");
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append("file", excelInput.files[0]);
-  // include selected sheet size (format: WIDTHxHEIGHT, e.g. "1250x2500")
-  if (sheetSize && sheetSize.value) {
-    formData.append("sheet_size", sheetSize.value);
-  }
-
- try {
-  const response = await fetch("/generate-dxf/", {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) throw new Error("DXF ZIP generation failed");
-
-  // Try to extract filename from the response header
-  const contentDisposition = response.headers.get("Content-Disposition");
-  let zipFileName = "Doors.zip";
-
-  if (contentDisposition && contentDisposition.includes("filename=")) {
-    const match = contentDisposition.match(/filename="?([^"]+)"?/);
-    if (match && match[1]) {
-      zipFileName = match[1];
+      showToast(
+        `✅ DXF file (${dynamicFileName}) generated successfully`,
+        "success"
+      );
+    } catch (err) {
+      showToast("❌ " + err.message, "error");
+    } finally {
+      form.classList.remove("loading");
     }
-  } else {
-    // fallback: timestamp-based filename
-    const timestamp = Date.now();
-    zipFileName = `Doors_${timestamp}.zip`;
+  } else if (currentMode === "bulk") {
+    if (!excelInput.files.length) {
+      showToast("⚠️ Please select an Excel file!", "error");
+      form.classList.remove("loading");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", excelInput.files[0]);
+    // include selected sheet size (format: WIDTHxHEIGHT, e.g. "1250x2500")
+    if (sheetSize && sheetSize.value) {
+      formData.append("sheet_size", sheetSize.value);
+    }
+
+    try {
+      const response = await fetch("/generate-dxf/", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) throw new Error("DXF ZIP generation failed");
+
+      // Try to extract filename from the response header
+      const contentDisposition = response.headers.get("Content-Disposition");
+      let zipFileName = "Doors.zip";
+
+      if (contentDisposition && contentDisposition.includes("filename=")) {
+        const match = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (match && match[1]) {
+          zipFileName = match[1];
+        }
+      } else {
+        // fallback: timestamp-based filename
+        const timestamp = Date.now();
+        zipFileName = `Doors_${timestamp}.zip`;
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      // Trigger ZIP download
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = zipFileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      showToast(
+        `✅ ZIP file (${zipFileName}) generated successfully`,
+        "success"
+      );
+    } catch (err) {
+      showToast("❌ " + err.message, "error");
+    } finally {
+      form.classList.remove("loading");
+    }
   }
-
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
-
-  // Trigger ZIP download
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = zipFileName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-
-  showToast(`✅ ZIP file (${zipFileName}) generated successfully`, "success");
-} catch (err) {
-  showToast("❌ " + err.message, "error");
-} finally {
-  form.classList.remove("loading");
-} 
-}
 });
 // Helper to build the same request payload used for generation
 function buildRequestPayload() {
@@ -647,6 +774,95 @@ function buildRequestPayload() {
   return requestPayload;
 }
 
+// ----------------------
+// Generate PDF button
+// ----------------------
+const pdfBtn = document.getElementById("generatePdfBtn");
+if (pdfBtn) {
+  pdfBtn.addEventListener("click", async (e) => {
+    // Only allow PDF generation in Single mode
+    if (currentMode !== "single") {
+      showToast("Generate PDF is only available in Single mode", "error");
+      return;
+    }
+
+    // validate before generating
+    const v = validateInputs();
+    if (!v.ok) {
+      showToast("Please fix input errors: " + v.messages.join(" "), "error");
+      if (v.firstEl) v.firstEl.focus();
+      return;
+    }
+
+    pdfBtn.disabled = true;
+    form.classList.add("loading");
+
+    try {
+      const payload = buildRequestPayload();
+
+      const resp = await fetch("/generate-single-dxf/?save_pdf=true", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!resp.ok) throw new Error("PDF generation failed");
+
+      const blob = await resp.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const suggestedName =
+        (payload.metadata && payload.metadata.file_name) || "door_output.dxf";
+      const pdfName = suggestedName.replace(/\.dxf$/i, ".pdf");
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = pdfName;
+      document.body.appendChild(a);
+      try {
+        // Try the normal programmatic download first
+        a.click();
+      } catch (e) {
+        // Some extensions or browsers may throw when synthetic clicks are blocked
+        console.warn(
+          "Programmatic download failed, will fallback to opening in new tab",
+          e
+        );
+        // fall through to open in new tab below
+      }
+      a.remove();
+
+      // Fallback: some Chrome extensions block programmatic downloads. As a
+      // reliable fallback, open the blob URL in a new tab for Chrome-only
+      // (avoid duplicating in Edge/Opera which identify as Chrome in UA).
+      try {
+        const ua = navigator.userAgent || "";
+        const isChrome =
+          ua.includes("Chrome") && !ua.includes("Edg") && !ua.includes("OPR");
+        if (isChrome && blob && blob.type === "application/pdf") {
+          // Delay slightly to allow the browser to start a download if it will.
+          setTimeout(() => {
+            try {
+              window.open(url, "_blank");
+            } catch (e) {
+              console.warn("Failed to open PDF in new tab as fallback", e);
+            }
+          }, 700);
+        }
+      } catch (e) {
+        /* ignore UA parsing/open errors */
+      }
+
+      showToast(`✅ PDF (${pdfName}) generated`, "success");
+    } catch (err) {
+      showToast("❌ " + err.message, "error");
+    } finally {
+      pdfBtn.disabled = false;
+      form.classList.remove("loading");
+    }
+  });
+}
+
 // Preview button behaviour
 const previewBtn = document.getElementById("previewBtn");
 const previewBox = document.getElementById("previewBox");
@@ -682,568 +898,10 @@ if (previewBtn) {
 
       const json = await resp.json();
       previewBox.textContent = JSON.stringify(json, null, 2);
-      // draw into Fabric preview (replaces SVG) - pass full response so
-      // the drawing code can use metadata (width/height) to size the canvas.
-      try {
-        await drawGeometryToFabric(json);
-      } catch (err) {
-        console.error("Fabric draw error", err);
-      }
     } catch (err) {
       previewBox.textContent = "Error: " + err.message;
     }
   });
-}
-
-// ----------------------
-// Fabric.js preview code
-// ----------------------
-
-// Small helper to load Fabric.js dynamically if not already present
-function ensureFabric() {
-  return new Promise((resolve, reject) => {
-    if (window.fabric) return resolve(window.fabric);
-    const existing = document.querySelector('script[data-fabric-cdn="true"]');
-    if (existing) {
-      existing.addEventListener("load", () => resolve(window.fabric));
-      existing.addEventListener("error", () =>
-        reject(new Error("Fabric load error"))
-      );
-      return;
-    }
-    const s = document.createElement("script");
-    s.src =
-      "https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js";
-    s.async = true;
-    s.setAttribute("data-fabric-cdn", "true");
-    s.onload = () => resolve(window.fabric);
-    s.onerror = () => reject(new Error("Fabric failed to load"));
-    document.head.appendChild(s);
-  });
-}
-
-/**
- * Draw geometry into a Fabric canvas.
- * - If #fabricCanvas exists, it uses that. If not, it will attempt to replace
- *   an existing #svgPreview or insert into #svgPreviewWrapper.
- */
-async function drawGeometryToFabric(responseOrGeometry) {
-  await ensureFabric();
-
-  console.debug("drawGeometryToFabric: fabric available?", !!window.fabric);
-
-  // Accept either the full response (which contains .geometry and .metadata)
-  // or the raw geometry object. Normalize here.
-  // find or create canvas element
-  let canvasEl = document.getElementById("fabricCanvas");
-  let geometry =
-    responseOrGeometry && responseOrGeometry.geometry
-      ? responseOrGeometry.geometry
-      : responseOrGeometry;
-  let metadata =
-    responseOrGeometry && responseOrGeometry.metadata
-      ? responseOrGeometry.metadata
-      : null;
-  // if metadata not supplied, try to find in geometry (some endpoints may embed it there)
-  if (!metadata && geometry && geometry.metadata) metadata = geometry.metadata;
-  // compute metadata-derived size up-front so we can apply it even when a
-  // canvas already exists (prevents stale sizes when previewing multiple
-  // different doors without refreshing the page).
-  const metaW =
-    metadata && Number.isFinite(Number(metadata.width))
-      ? Number(metadata.width)
-      : 1000;
-  const metaH =
-    metadata && Number.isFinite(Number(metadata.height))
-      ? Number(metadata.height)
-      : 700;
-
-  if (!canvasEl) {
-    // prefer a wrapper if present
-    const wrapper =
-      document.getElementById("svgPreviewWrapper") ||
-      document.getElementById("previewContainer");
-    if (wrapper) {
-      // remove any old SVG preview if present
-      const oldSvg = document.getElementById("svgPreview");
-      if (oldSvg) oldSvg.remove();
-      canvasEl = document.createElement("canvas");
-      canvasEl.id = "fabricCanvas";
-      // set canvas size based on metadata (use mm as px 1:1). Add 20 pts extra for labels.
-      canvasEl.width = Math.max(100, Math.round(metaW + 20));
-      canvasEl.height = Math.max(100, Math.round(metaH + 20));
-      // insert at end of wrapper
-      wrapper.appendChild(canvasEl);
-      // Ensure the canvas visually fits the wrapper while keeping the
-      // high-resolution internal buffer. Compute a display size that
-      // preserves aspect ratio and does not overflow the wrapper.
-      try {
-        // compute wrapper-constrained display size and apply mobile caps so the
-        // preview remains compact on small screens. Preserve aspect ratio.
-        const maxViewportW = Math.max(160, window.innerWidth - 40);
-        const maxViewportH = Math.max(160, window.innerHeight - 120);
-        const wrapperW =
-          wrapper.clientWidth || Math.min(maxViewportW, canvasEl.width);
-        const wrapperH =
-          wrapper.clientHeight || Math.min(maxViewportH, canvasEl.height);
-        let displayW = Math.min(canvasEl.width, wrapperW);
-        let displayH = Math.round(
-          (canvasEl.height * displayW) / canvasEl.width
-        );
-        // mobile: cap height to a fraction of viewport so it doesn't dominate screen
-        if (window.innerWidth <= 600) {
-          const mobileMaxH = Math.round(window.innerHeight * 0.6);
-          displayH = Math.min(displayH, mobileMaxH);
-          displayW = Math.min(displayW, window.innerWidth - 24);
-        }
-        canvasEl.style.width = displayW + "px";
-        canvasEl.style.height =
-          Math.max(80, Math.min(displayH, wrapperH)) + "px";
-        canvasEl.style.maxWidth = "100%";
-      } catch (e) {
-        /* ignore display sizing errors */
-      }
-    } else {
-      console.warn("No container available for Fabric canvas");
-      return;
-    }
-  } else {
-    // If the canvas element already exists, update its natural size based on
-    // the new metadata so subsequent Fabric initialization uses the correct
-    // buffer size. Also update the CSS display sizing to fit the wrapper.
-    try {
-      canvasEl.width = Math.max(100, Math.round(metaW + 20));
-      canvasEl.height = Math.max(100, Math.round(metaH + 20));
-      const wrapper =
-        document.getElementById("svgPreviewWrapper") ||
-        document.getElementById("previewContainer");
-      if (wrapper && canvasEl) {
-        const maxViewportW = Math.max(160, window.innerWidth - 40);
-        const maxViewportH = Math.max(160, window.innerHeight - 120);
-        const wrapperW =
-          wrapper.clientWidth || Math.min(maxViewportW, canvasEl.width);
-        const wrapperH =
-          wrapper.clientHeight || Math.min(maxViewportH, canvasEl.height);
-        let displayW = Math.min(canvasEl.width, wrapperW);
-        let displayH = Math.round(
-          (canvasEl.height * displayW) / canvasEl.width
-        );
-        if (window.innerWidth <= 600) {
-          const mobileMaxH = Math.round(window.innerHeight * 0.6);
-          displayH = Math.min(displayH, mobileMaxH);
-          displayW = Math.min(displayW, window.innerWidth - 24);
-        }
-        canvasEl.style.width = displayW + "px";
-        canvasEl.style.height =
-          Math.max(80, Math.min(displayH, wrapperH)) + "px";
-        canvasEl.style.maxWidth = "100%";
-      }
-    } catch (e) {
-      /* ignore sizing errors */
-    }
-  }
-
-  // Initialize or reset Fabric canvas
-  // Ensure we always have a fresh Fabric canvas instance. If an existing
-  // instance is present, dispose it cleanly to avoid stale event handlers
-  // or internal state that can prevent rendering.
-  if (window.fabricCanvas) {
-    try {
-      if (typeof window.fabricCanvas.dispose === "function") {
-        window.fabricCanvas.dispose();
-      }
-    } catch (e) {
-      console.warn("Error disposing existing fabricCanvas:", e);
-    }
-    window.fabricCanvas = null;
-  }
-
-  try {
-    // Create a new fabric.Canvas and size it to the element's natural size.
-    window.fabricCanvas = new fabric.Canvas("fabricCanvas", {
-      backgroundColor: "#f8f9fb",
-      selection: false,
-      renderOnAddRemove: true,
-    });
-    // Set canvas dimensions to match the element (use client size if available)
-    try {
-      const w = canvasEl.width || canvasEl.clientWidth || 1000;
-      const h = canvasEl.height || canvasEl.clientHeight || 700;
-      window.fabricCanvas.setWidth(w);
-      window.fabricCanvas.setHeight(h);
-    } catch (e) {
-      /* ignore sizing errors */
-    }
-    // Also ensure the canvas CSS display size fits the preview wrapper
-    try {
-      const wrapperEl =
-        document.getElementById("svgPreviewWrapper") ||
-        document.getElementById("previewContainer");
-      if (wrapperEl && canvasEl) {
-        const wrapperW =
-          wrapperEl.clientWidth ||
-          Math.min(window.innerWidth - 40, canvasEl.width);
-        const wrapperH =
-          wrapperEl.clientHeight ||
-          Math.min(window.innerHeight - 120, canvasEl.height);
-        const displayW = Math.min(canvasEl.width, wrapperW);
-        const displayH = Math.round(
-          (canvasEl.height * displayW) / canvasEl.width
-        );
-        canvasEl.style.width = displayW + "px";
-        canvasEl.style.height =
-          Math.max(100, Math.min(displayH, wrapperH)) + "px";
-      }
-    } catch (e) {
-      /* ignore */
-    }
-  } catch (err) {
-    console.error("Failed to create fabric.Canvas:", err);
-    // rethrow so callers (preview flow) can handle it
-    throw err;
-  }
-  const canvas = window.fabricCanvas;
-
-  // Normalize canvas size using the Fabric canvas's dimensions. Using the
-  // Fabric instance avoids mismatches when the element is CSS-scaled or when
-  // Fabric has adjusted its internal size. Fall back to element natural size.
-  const canvasWidth =
-    (canvas && typeof canvas.getWidth === "function" && canvas.getWidth()) ||
-    canvasEl.width ||
-    1000;
-  const canvasHeight =
-    (canvas && typeof canvas.getHeight === "function" && canvas.getHeight()) ||
-    canvasEl.height ||
-    700;
-
-  // collect all points to compute bounds
-  const points = [];
-  (geometry.frames || []).forEach((f) =>
-    f.points.forEach((p) => points.push(p))
-  );
-  (geometry.cutouts || []).forEach((c) =>
-    c.points.forEach((p) => points.push(p))
-  );
-  (geometry.holes || []).forEach((h) => points.push(h.center));
-
-  if (points.length === 0) {
-    // blank placeholder
-    const rect = new fabric.Rect({
-      left: 50,
-      top: 50,
-      width: canvasWidth - 100,
-      height: canvasHeight - 100,
-      fill: "",
-      stroke: "#ccc",
-      strokeWidth: 1,
-      selectable: false,
-    });
-    canvas.add(rect);
-    canvas.renderAll();
-    return;
-  }
-
-  const xs = points.map((p) => p[0]);
-  const ys = points.map((p) => p[1]);
-  const minX = Math.min(...xs),
-    maxX = Math.max(...xs);
-  const minY = Math.min(...ys),
-    maxY = Math.max(...ys);
-
-  const vbW = Math.max(1, maxX - minX);
-  const vbH = Math.max(1, maxY - minY);
-
-  // keep padding so dims/labels are visible
-  const padding = 40;
-  const usableW = canvasWidth - padding * 2;
-  const usableH = canvasHeight - padding * 2;
-  const scale = Math.min(usableW / vbW, usableH / vbH);
-
-  const offsetX = padding - minX * scale;
-  const offsetY = padding - minY * scale;
-
-  // CAD Y-up to Canvas Y-down: canvasY = canvasHeight - (y*scale + offsetY)
-  const toCanvasX = (x) => x * scale + offsetX;
-  const toCanvasY = (y) => canvasHeight - (y * scale + offsetY);
-
-  // helper to create closed polygon path string (Fabric Path expects SVG path)
-  function polygonPathFromPoints(pointsArray) {
-    if (!pointsArray.length) return "";
-    return (
-      pointsArray
-        .map(
-          (p, i) =>
-            `${i === 0 ? "M" : "L"} ${toCanvasX(p[0])} ${toCanvasY(p[1])}`
-        )
-        .join(" ") + " Z"
-    );
-  }
-
-  // Draw frames
-  (geometry.frames || []).forEach((f) => {
-    const pathStr = polygonPathFromPoints(f.points);
-    if (!pathStr) return;
-    const p = new fabric.Path(pathStr, {
-      fill: "",
-      stroke: "#0b6394",
-      strokeWidth: Math.max(1, 2),
-      selectable: false,
-      evented: false,
-    });
-    canvas.add(p);
-  });
-
-  // Draw cutouts
-  (geometry.cutouts || []).forEach((c) => {
-    const pathStr = polygonPathFromPoints(c.points);
-    if (!pathStr) return;
-    const p = new fabric.Path(pathStr, {
-      fill: "#ffffff",
-      stroke: "#e85",
-      strokeWidth: Math.max(0.8, 1.2),
-      selectable: false,
-      evented: false,
-    });
-    canvas.add(p);
-  });
-
-  // Draw holes
-  (geometry.holes || []).forEach((h) => {
-    const cx = toCanvasX(h.center[0]);
-    const cy = toCanvasY(h.center[1]);
-    const r = Math.max(1, h.radius * scale);
-    const c = new fabric.Circle({
-      left: cx,
-      top: cy,
-      radius: r,
-      originX: "center",
-      originY: "center",
-      fill: "#333",
-      selectable: false,
-      evented: false,
-    });
-    canvas.add(c);
-  });
-
-  // Labels (center_label)
-  (geometry.labels || []).forEach((l) => {
-    if (l.type === "center_label" && l.position === "center") {
-      const txt = new fabric.Text(l.text, {
-        left: canvasWidth / 2,
-        top: canvasHeight / 2 - 10,
-        originX: "center",
-        originY: "center",
-        // Choose a font size that scales with our computed drawing scale but
-        // keep a sensible minimum for small screens so annotations remain legible.
-        fontSize: Math.max(10, Math.round(14 * (scale / 4 + 0.5))),
-        fill: "#222",
-        selectable: false,
-        evented: false,
-      });
-      canvas.add(txt);
-    }
-  });
-
-  // === draw width/height dimensions for first two frames (replicates previous behaviour) ===
-  function drawDimLineFabric(x1, y1, x2, y2, label, opts = {}) {
-    const { tick = 6, textSize = 12, color = "#c0392b" } = opts;
-    // main line
-    const line = new fabric.Line([x1, y1, x2, y2], {
-      stroke: color,
-      strokeWidth: 1.2,
-      selectable: false,
-      evented: false,
-    });
-    canvas.add(line);
-
-    // ticks
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const len = Math.hypot(dx, dy) || 1;
-    let px = (-dy / len) * tick;
-    let py = (dx / len) * tick;
-
-    const midx = (x1 + x2) / 2;
-    const midy = (y1 + y2) / 2;
-    const dirSign =
-      (midx - canvasWidth / 2) * px + (midy - canvasHeight / 2) * py >= 0
-        ? 1
-        : -1;
-    px *= dirSign;
-    py *= dirSign;
-
-    const t1 = new fabric.Line([x1, y1, x1 + px, y1 + py], {
-      stroke: color,
-      strokeWidth: 1.2,
-      selectable: false,
-      evented: false,
-    });
-    const t2 = new fabric.Line([x2, y2, x2 + px, y2 + py], {
-      stroke: color,
-      strokeWidth: 1.2,
-      selectable: false,
-      evented: false,
-    });
-    canvas.add(t1);
-    canvas.add(t2);
-
-    // endpoint markers
-    const m1 = new fabric.Circle({
-      left: x1,
-      top: y1,
-      radius: 2.2,
-      fill: color,
-      originX: "center",
-      originY: "center",
-      selectable: false,
-      evented: false,
-    });
-    const m2 = new fabric.Circle({
-      left: x2,
-      top: y2,
-      radius: 2.2,
-      fill: color,
-      originX: "center",
-      originY: "center",
-      selectable: false,
-      evented: false,
-    });
-    canvas.add(m1);
-    canvas.add(m2);
-
-    // label background rect + text
-    const labelX = midx + px * 2.5;
-    const labelY = midy + py * 2.5;
-    const txt = new fabric.Text(label, {
-      left: labelX,
-      top: labelY,
-      originX: "center",
-      originY: "center",
-      fontSize: textSize,
-      fill: "#000",
-      selectable: false,
-      evented: false,
-    });
-    // approximate width
-    const approxWidth = Math.max(40, label.length * (textSize * 0.6));
-    const rect = new fabric.Rect({
-      left: labelX - approxWidth / 2 - 6,
-      top: labelY - textSize / 1.6 - 4,
-      width: approxWidth + 12,
-      height: textSize * 1.6 + 6,
-      fill: "#fff",
-      stroke: "#ddd",
-      rx: 3,
-      ry: 3,
-      originX: "left",
-      originY: "top",
-      selectable: false,
-      evented: false,
-    });
-    // rectify rect position because we used center coords for txt
-    rect.left = rect.left;
-    rect.top = rect.top;
-    canvas.add(rect);
-    canvas.add(txt);
-  }
-
-  const fs = geometry.frames || [];
-  if (fs.length >= 1) {
-    const f = fs[0];
-    const xsF = f.points.map((p) => p[0]);
-    const ysF = f.points.map((p) => p[1]);
-    const minXF = Math.min(...xsF),
-      maxXF = Math.max(...xsF);
-    const minYF = Math.min(...ysF),
-      maxYF = Math.max(...ysF);
-    // compute a dynamic offset for dimension lines so labels remain inside
-    // the canvas on small screens; clamp to reasonable min/max values.
-    const defaultDim = 40;
-    const dimOffset = Math.min(
-      defaultDim,
-      Math.max(12, Math.round(canvasWidth * 0.06))
-    );
-    // bottom dimension (width)
-    const bx1 = toCanvasX(minXF);
-    const by = toCanvasY(maxYF) + dimOffset;
-    const bx2 = toCanvasX(maxXF);
-    const widthVal = Math.round(maxXF - minXF);
-    drawDimLineFabric(bx1, by, bx2, by, `${widthVal} mm`, { tick: 6 });
-    // right dimension (height)
-    const rx = toCanvasX(maxXF) + dimOffset;
-    const ry1 = toCanvasY(minYF);
-    const ry2 = toCanvasY(maxYF);
-    const heightVal = Math.round(maxYF - minYF);
-    drawDimLineFabric(rx, ry1, rx, ry2, `${heightVal} mm`, { tick: 6 });
-  }
-
-  if (fs.length >= 2) {
-    const f = fs[1];
-    const xs2 = f.points.map((p) => p[0]);
-    const ys2 = f.points.map((p) => p[1]);
-    const minX2 = Math.min(...xs2),
-      maxX2 = Math.max(...xs2);
-    const minY2 = Math.min(...ys2),
-      maxY2 = Math.max(...ys2);
-    // dynamic dim offset for second frame as well
-    const defaultDim2 = 40;
-    const dimOffset = Math.min(
-      defaultDim2,
-      Math.max(12, Math.round(canvasWidth * 0.06))
-    );
-    // top dimension (width) - above the box
-    const tx1 = toCanvasX(minX2);
-    let ty = toCanvasY(minY2) - dimOffset;
-    const tx2 = toCanvasX(maxX2);
-    const widthVal = Math.round(maxX2 - minX2);
-    drawDimLineFabric(tx1, ty, tx2, ty, `${widthVal} mm`, { tick: 6 });
-    // left dimension (height)
-    let lx = toCanvasX(minX2) - dimOffset;
-    const ly1 = toCanvasY(minY2);
-    const ly2 = toCanvasY(maxY2);
-    const heightVal = Math.round(maxY2 - minY2);
-    // clamp vertical dimension lines to remain within canvas bounds
-    const edgePad = 6;
-    if (lx < edgePad) lx = edgePad;
-    if (ty < edgePad) ty = edgePad;
-    drawDimLineFabric(tx1, ty, tx2, ty, `${widthVal} mm`, { tick: 6 });
-    drawDimLineFabric(lx, ly1, lx, ly2, `${heightVal} mm`, { tick: 6 });
-  }
-
-  // Zoom & Pan handlers (mouse wheel and ALT + drag for panning)
-  canvas.off && canvas.off("mouse:wheel"); // remove previous handlers (if any)
-  canvas.on("mouse:wheel", function (opt) {
-    let delta = opt.e.deltaY;
-    let zoom = canvas.getZoom();
-    zoom *= 0.999 ** delta;
-    if (zoom > 4) zoom = 4;
-    if (zoom < 0.2) zoom = 0.2;
-    canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
-    opt.e.preventDefault();
-    opt.e.stopPropagation();
-  });
-
-  // panning
-  let panning = false;
-  canvas.off && canvas.off("mouse:down");
-  canvas.off && canvas.off("mouse:move");
-  canvas.off && canvas.off("mouse:up");
-
-  canvas.on("mouse:down", (opt) => {
-    if (opt.e.altKey) panning = true;
-  });
-  canvas.on("mouse:move", (opt) => {
-    if (panning) {
-      const e = opt.e;
-      const vpt = canvas.viewportTransform;
-      vpt[4] += e.movementX;
-      vpt[5] += e.movementY;
-      canvas.requestRenderAll();
-    }
-  });
-  canvas.on("mouse:up", () => (panning = false));
-
-  canvas.requestRenderAll();
 }
 
 // drawGeometryToSVG removed and replaced by Fabric implementation above

@@ -132,109 +132,6 @@ function validateInputs() {
     }
   }
 
-  // Event delegation fallback: some environments may prevent direct handler
-  // attachment to the button. This ensures clicks on the PDF button are
-  // handled even if the earlier addEventListener didn't attach.
-  document.addEventListener("click", (e) => {
-    try {
-      const btn =
-        e.target && e.target.closest && e.target.closest("#generatePdfBtn");
-      if (!btn) return;
-
-      // Prevent default behaviour (if any) and run the same flow as the
-      // dedicated handler above.
-      e.preventDefault();
-
-      // Re-use the same logic by invoking an async wrapper (fire-and-forget)
-      (async () => {
-        // Only allow PDF generation in Single mode
-        if (currentMode !== "single") {
-          showToast("Generate PDF is only available in Single mode", "error");
-          return;
-        }
-
-        // validate before generating
-        const v = validateInputs();
-        if (!v.ok) {
-          showToast(
-            "Please fix input errors: " + v.messages.join(" "),
-            "error"
-          );
-          if (v.firstEl) v.firstEl.focus();
-          return;
-        }
-
-        btn.disabled = true;
-        form.classList.add("loading");
-
-        try {
-          const payload = buildRequestPayload();
-
-          const resp = await fetch("/generate-single-dxf/?save_pdf=true", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
-
-          if (!resp.ok) throw new Error("PDF generation failed");
-
-          const blob = await resp.blob();
-          const url = window.URL.createObjectURL(blob);
-
-          const suggestedName =
-            (payload.metadata && payload.metadata.file_name) ||
-            "door_output.dxf";
-          const pdfName = suggestedName.replace(/\.dxf$/i, ".pdf");
-
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = pdfName;
-          document.body.appendChild(a);
-          try {
-            a.click();
-          } catch (e) {
-            console.warn(
-              "Delegated programmatic download failed, will fallback to opening in new tab",
-              e
-            );
-          }
-          a.remove();
-
-          try {
-            const ua = navigator.userAgent || "";
-            const isChrome =
-              ua.includes("Chrome") &&
-              !ua.includes("Edg") &&
-              !ua.includes("OPR");
-            if (isChrome && blob && blob.type === "application/pdf") {
-              setTimeout(() => {
-                try {
-                  window.open(url, "_blank");
-                } catch (e) {
-                  console.warn(
-                    "Failed to open PDF in new tab as delegated fallback",
-                    e
-                  );
-                }
-              }, 700);
-            }
-          } catch (e) {
-            /* ignore UA/open errors */
-          }
-
-          showToast(`✅ PDF (${pdfName}) generated`, "success");
-        } catch (err) {
-          showToast("❌ " + err.message, "error");
-        } finally {
-          btn.disabled = false;
-          form.classList.remove("loading");
-        }
-      })();
-    } catch (e) {
-      console.error("Error in delegated PDF click handler", e);
-    }
-  });
-
   return { ok: msgs.length === 0, messages: msgs, firstEl };
 }
 
@@ -301,6 +198,96 @@ function switchMode(mode) {
     }
   }
 }
+
+// Top-level delegated fallback for Generate PDF button
+// This listener lives at document-level so it attaches early and will catch
+// clicks even when direct addEventListener on the element fails in some
+// environments (extensions or browser quirks). It mirrors the direct
+// `pdfBtn` handler's behaviour.
+document.addEventListener("click", (e) => {
+  try {
+    const btn =
+      e.target && e.target.closest && e.target.closest("#generatePdfBtn");
+    if (!btn) return;
+    e.preventDefault();
+
+    (async () => {
+      if (currentMode !== "single") {
+        showToast("Generate PDF is only available in Single mode", "error");
+        return;
+      }
+
+      const v = validateInputs();
+      if (!v.ok) {
+        showToast("Please fix input errors: " + v.messages.join(" "), "error");
+        if (v.firstEl) v.firstEl.focus();
+        return;
+      }
+
+      btn.disabled = true;
+      form.classList.add("loading");
+
+      try {
+        const payload = buildRequestPayload();
+
+        const resp = await fetch("/generate-single-dxf/?save_pdf=true", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!resp.ok) throw new Error("PDF generation failed");
+
+        const blob = await resp.blob();
+        const url = window.URL.createObjectURL(blob);
+
+        const suggestedName =
+          (payload.metadata && payload.metadata.file_name) || "door_output.dxf";
+        const pdfName = suggestedName.replace(/\.dxf$/i, ".pdf");
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = pdfName;
+        document.body.appendChild(a);
+        try {
+          a.click();
+        } catch (e) {
+          console.warn(
+            "Programmatic download failed, will fallback to opening in new tab",
+            e
+          );
+        }
+        a.remove();
+
+        try {
+          const ua = navigator.userAgent || "";
+          const isChrome =
+            ua.includes("Chrome") && !ua.includes("Edg") && !ua.includes("OPR");
+          if (isChrome && blob && blob.type === "application/pdf") {
+            setTimeout(() => {
+              try {
+                window.open(url, "_blank");
+              } catch (e) {
+                console.warn("Failed to open PDF in new tab as fallback", e);
+              }
+            }, 700);
+          }
+        } catch (e) {
+          /* ignore UA/open errors */
+        }
+
+        showToast(`✅ PDF (${pdfName}) generated`, "success");
+      } catch (err) {
+        showToast("❌ " + err.message, "error");
+      } finally {
+        btn.disabled = false;
+        form.classList.remove("loading");
+      }
+    })();
+  } catch (e) {
+    console.error("Error in top-level delegated PDF click handler", e);
+  }
+});
 
 toggleOptions.forEach((option) => {
   option.addEventListener("click", () => {
@@ -509,89 +496,8 @@ form.addEventListener("submit", async (e) => {
     }
 
     try {
-      // Build request payload matching the DoorDXFRequest schema expected by the server
-      // safe numeric parse helper: preserves explicit 0, rejects NaN
-      function toNumberOrDefault(value, defaultVal) {
-        const n = Number(value);
-        return Number.isFinite(n) ? n : defaultVal;
-      }
+      const requestPayload = buildRequestPayload();
 
-      const allowanceDefault =
-        defaultAllowance && defaultAllowance.value === "yes" ? 25 : 0;
-
-      // Extract width & height for filename
-      const width = toNumberOrDefault(data.width_measurement, 0);
-      const height = toNumberOrDefault(data.height_measurement, 0);
-      // Determine door type and subtype safely
-      const category = doorType?.value === "double" ? "Double" : "Single";
-      const subtype = subType?.value || "Normal";
-
-      // Sanitize values for safe filenames
-      const safe = (value) => String(value).replace(/[^a-zA-Z0-9_.-]/g, "_");
-      const safeWidth = safe(width).replace(/\./g, "_");
-      const safeHeight = safe(height).replace(/\./g, "_");
-      const safeCategory = safe(category);
-      const safeSubtype = safe(subtype);
-
-      // Generate formatted timestamp
-      const formattedTimestamp = getFormattedTimestamp();
-
-      // Build dynamic filename
-      const dynamicFileName = `${safeCategory}_${safeSubtype}_${safeWidth}x${safeHeight}_${formattedTimestamp}.dxf`;
-
-      // Construct the request payload
-      const requestPayload = {
-        mode: "generate",
-        door: {
-          category,
-          type: subtype,
-          option:
-            fireOption && !fireOptionsContainer.classList.contains("hidden")
-              ? fireOption.value || null
-              : null,
-          hole_offset: holeOffset?.value || "",
-          default_allowance: defaultAllowance?.value || "yes",
-        },
-        dimensions: {
-          width_measurement: width,
-          height_measurement: height,
-          left_side_allowance_width: toNumberOrDefault(
-            data.left_side_allowance_width,
-            allowanceDefault
-          ),
-          right_side_allowance_width: toNumberOrDefault(
-            data.right_side_allowance_width,
-            allowanceDefault
-          ),
-          top_side_allowance_height: toNumberOrDefault(
-            data.top_side_allowance_height,
-            allowanceDefault
-          ),
-          bottom_side_allowance_height: toNumberOrDefault(
-            data.bottom_side_allowance_height,
-            allowanceDefault
-          ),
-        },
-        metadata: {
-          label: dynamicFileName.replace(/\.dxf$/i, ""),
-          file_name: dynamicFileName,
-          width: 0,
-          height: 0,
-          rotated: false,
-          is_annotation_required: true,
-          offset: [0.0, 0.0],
-        },
-        defaults: {
-          door_minus_measurement_width:
-            Number(data.door_minus_measurement_width) || 68,
-          door_minus_measurement_height:
-            Number(data.door_minus_measurement_height) || 70,
-          bending_width: Number(data.bending_width) || 31,
-          bending_height: Number(data.bending_height) || 24,
-        },
-      };
-
-      // Send API request
       const response = await fetch("/generate-single-dxf/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -603,16 +509,19 @@ form.addEventListener("submit", async (e) => {
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
 
-      // Trigger DXF file download using dynamic filename
+      const downloadName =
+        (requestPayload.metadata && requestPayload.metadata.file_name) ||
+        "door_output.dxf";
+
       const a = document.createElement("a");
       a.href = url;
-      a.download = dynamicFileName;
+      a.download = downloadName;
       document.body.appendChild(a);
       a.click();
       a.remove();
 
       showToast(
-        `✅ DXF file (${dynamicFileName}) generated successfully`,
+        `✅ DXF file (${downloadName}) generated successfully`,
         "success"
       );
     } catch (err) {
@@ -716,6 +625,26 @@ function buildRequestPayload() {
   const allowanceDefault =
     defaultAllowance && defaultAllowance.value === "yes" ? 25 : 0;
 
+  // Extract width & height for filename and other metadata
+  const width = toNumberOrDefault(data.width_measurement, 0);
+  const height = toNumberOrDefault(data.height_measurement, 0);
+  // Determine door type and subtype safely
+  const category = doorType?.value === "double" ? "Double" : "Single";
+  const subtype = subType?.value || "Normal";
+
+  // Sanitize values for safe filenames
+  const safe = (value) => String(value).replace(/[^a-zA-Z0-9_.-]/g, "_");
+  const safeWidth = safe(width).replace(/\./g, "_");
+  const safeHeight = safe(height).replace(/\./g, "_");
+  const safeCategory = safe(category);
+  const safeSubtype = safe(subtype);
+
+  // Generate formatted timestamp
+  const formattedTimestamp = getFormattedTimestamp();
+
+  // Build dynamic filename
+  const dynamicFileName = `${safeCategory}_${safeSubtype}_${safeWidth}x${safeHeight}_${formattedTimestamp}.dxf`;
+
   const requestPayload = {
     mode: "generate",
     door: {
@@ -753,8 +682,8 @@ function buildRequestPayload() {
       ),
     },
     metadata: {
-      label: data.file_name ? data.file_name.replace(/\.dxf$/i, "") : "Single",
-      file_name: data.file_name || "Single_door.dxf",
+      label: dynamicFileName.replace(/\.dxf$/i, ""),
+      file_name: dynamicFileName,
       width: 0,
       height: 0,
       rotated: false,
@@ -774,94 +703,11 @@ function buildRequestPayload() {
   return requestPayload;
 }
 
-// ----------------------
-// Generate PDF button
-// ----------------------
-const pdfBtn = document.getElementById("generatePdfBtn");
-if (pdfBtn) {
-  pdfBtn.addEventListener("click", async (e) => {
-    // Only allow PDF generation in Single mode
-    if (currentMode !== "single") {
-      showToast("Generate PDF is only available in Single mode", "error");
-      return;
-    }
-
-    // validate before generating
-    const v = validateInputs();
-    if (!v.ok) {
-      showToast("Please fix input errors: " + v.messages.join(" "), "error");
-      if (v.firstEl) v.firstEl.focus();
-      return;
-    }
-
-    pdfBtn.disabled = true;
-    form.classList.add("loading");
-
-    try {
-      const payload = buildRequestPayload();
-
-      const resp = await fetch("/generate-single-dxf/?save_pdf=true", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!resp.ok) throw new Error("PDF generation failed");
-
-      const blob = await resp.blob();
-      const url = window.URL.createObjectURL(blob);
-
-      const suggestedName =
-        (payload.metadata && payload.metadata.file_name) || "door_output.dxf";
-      const pdfName = suggestedName.replace(/\.dxf$/i, ".pdf");
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = pdfName;
-      document.body.appendChild(a);
-      try {
-        // Try the normal programmatic download first
-        a.click();
-      } catch (e) {
-        // Some extensions or browsers may throw when synthetic clicks are blocked
-        console.warn(
-          "Programmatic download failed, will fallback to opening in new tab",
-          e
-        );
-        // fall through to open in new tab below
-      }
-      a.remove();
-
-      // Fallback: some Chrome extensions block programmatic downloads. As a
-      // reliable fallback, open the blob URL in a new tab for Chrome-only
-      // (avoid duplicating in Edge/Opera which identify as Chrome in UA).
-      try {
-        const ua = navigator.userAgent || "";
-        const isChrome =
-          ua.includes("Chrome") && !ua.includes("Edg") && !ua.includes("OPR");
-        if (isChrome && blob && blob.type === "application/pdf") {
-          // Delay slightly to allow the browser to start a download if it will.
-          setTimeout(() => {
-            try {
-              window.open(url, "_blank");
-            } catch (e) {
-              console.warn("Failed to open PDF in new tab as fallback", e);
-            }
-          }, 700);
-        }
-      } catch (e) {
-        /* ignore UA parsing/open errors */
-      }
-
-      showToast(`✅ PDF (${pdfName}) generated`, "success");
-    } catch (err) {
-      showToast("❌ " + err.message, "error");
-    } finally {
-      pdfBtn.disabled = false;
-      form.classList.remove("loading");
-    }
-  });
-}
+// Generate PDF: handled via top-level delegated listener only.
+// The delegated `document.addEventListener('click', ...)` further down in
+// this file is the single source of truth for PDF generation. Keeping only
+// the delegated handler avoids duplicate logic and ensures the handler
+// attaches early even when direct element event attachment fails.
 
 // Preview button behaviour
 const previewBtn = document.getElementById("previewBtn");

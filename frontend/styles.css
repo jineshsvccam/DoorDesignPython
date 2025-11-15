@@ -412,6 +412,13 @@ body.bulk-mode #previewBtn {
   display: none !important;
 }
 
+/* Also hide the Generate PDF button when bulk mode is active. This ensures
+   the PDF control remains visible only in Single mode even if JS toggling
+   fails or runs before the element exists. */
+body.bulk-mode #generatePdfBtn {
+  display: none !important;
+}
+
 /* ========== PAGE HEADER (moved from inline) ========== */
 .page-header {
   background: #0d1b25; /* dark panel */

@@ -14,3 +14,6 @@ numpy>=1.24.0
 PyQt5>=5.15.9
 # Alternative: if you prefer Qt for Python, install PySide6 instead of PyQt5
 # PySide6>=6.5.0
+
+# Headless PDF backend used by tools/export_dxf_to_pdf_headless.py
+PyMuPDF

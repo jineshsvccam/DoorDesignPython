@@ -181,26 +181,13 @@ class DoorDrawingGenerator:
             doc.saveas(file_name)
             print(f"DXF file '{file_name}' created successfully.")
 
-            # If user also wants a PDF, generate it
+            # If user also wants a PDF, generate it using the headless exporter
             if save_pdf:
                 try:
-                    # Normalize file_name to string and swap extension reliably
                     pdf_name = os.path.splitext(str(file_name))[0] + ".pdf"
-                    # Prefer the faster PyQt-based exporter when available
-                    try:
-                        from tools.export_dxf_to_pdf import export_dxf_to_pdf
-                        try:
-                            # export_dxf_to_pdf accepts either a file path or an ezdxf Drawing
-                            export_dxf_to_pdf(doc, pdf_name)
-                        except Exception as inner_e:
-                            print(f"PyQt-based PDF export failed, falling back to Matplotlib exporter: {inner_e}")
-                            logger.exception("PyQt exporter runtime failure during PDF export: %s", inner_e)
-                            DoorDrawingPDF.export_to_pdf(doc, pdf_name)
-                    except Exception as import_e:
-                        # import failed or backend unavailable; fallback to Matplotlib exporter
-                        print(f"PyQt exporter import/initialization failed: {import_e}. Using Matplotlib fallback.")
-                        logger.exception("PyQt exporter import/initialization failure: %s", import_e)
-                        DoorDrawingPDF.export_to_pdf(doc, pdf_name)
+                    from tools.export_dxf_to_pdf_headless import export_dxf_to_pdf_headless
+                    export_dxf_to_pdf_headless(doc, pdf_name)
+                    print(f"PDF file '{pdf_name}' created successfully.")
                 except Exception as e:
                     print(f"Failed to export PDF: {e}")
                     logger.exception("PDF export failed: %s", e)

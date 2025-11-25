@@ -8,6 +8,14 @@ from ezdxf.addons.drawing.frontend import Frontend
 from ezdxf.addons.drawing import layout, config
 from ezdxf.addons.drawing.pymupdf import PyMuPdfBackend
 
+# Configure fontconfig for Linux systems to find system fonts
+if os.name == 'posix':  # Linux/Unix
+    # Ensure fontconfig knows about system fonts
+    if 'FONTCONFIG_PATH' not in os.environ:
+        os.environ['FONTCONFIG_PATH'] = '/etc/fonts'
+    if 'FONTCONFIG_FILE' not in os.environ:
+        os.environ['FONTCONFIG_FILE'] = '/etc/fonts/fonts.conf'
+
 # --- Constants ---
 
 # Define a standard page size (A4 portrait) in millimeters

@@ -15,8 +15,8 @@ A4_PORTRAIT_MM = (210.0, 297.0)
 
 # Provide a typed alias for ezdxf.readfile using getattr as a safe fallback
 _ezdxf_readfile_attr = getattr(ezdxf, "readfile", None)
-ezdxf_readfile: Optional[Callable[[str | os.PathLike], Drawing]] = (
-    cast(Callable[[str | os.PathLike], Drawing], _ezdxf_readfile_attr)
+ezdxf_readfile: Optional[Callable[[Union[str, os.PathLike]], Drawing]] = (
+    cast(Callable[[Union[str, os.PathLike]], Drawing], _ezdxf_readfile_attr)
     if callable(_ezdxf_readfile_attr)
     else None
 )
@@ -25,7 +25,7 @@ ezdxf_readfile: Optional[Callable[[str | os.PathLike], Drawing]] = (
 
 def export_dxf_to_pdf_headless(
     dxf_source: Union[str, os.PathLike, Drawing],
-    pdf_path: str | os.PathLike,
+    pdf_path: Union[str, os.PathLike],
     margin_mm: float = 5.0,
     skip_problematic: bool = True,
 ):

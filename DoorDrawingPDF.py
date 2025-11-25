@@ -1,5 +1,6 @@
 from typing import Any, cast
 from ezdxf.document import Drawing
+import matplotlib.pyplot as plt
 
 class DoorDrawingPDF:
     """Utility class to export DXF drawings to PDF using ezdxf's Matplotlib backend."""
@@ -13,17 +14,17 @@ class DoorDrawingPDF:
             from ezdxf.addons.drawing.properties import RenderContext
             from ezdxf.addons.drawing.frontend import Frontend
             from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
-            import matplotlib.pyplot as plt
 
             msp = cast(Any, doc.modelspace())
-            ctx = RenderContext(doc)
+            
+            # --- Use the default RenderContext (no config parameter) ---
+            ctx = RenderContext(doc) 
 
             # --- A4 Page ---
             A4_WIDTH_INCH = 8.27
             A4_HEIGHT_INCH = 11.69
 
             fig, ax = plt.subplots(figsize=(A4_WIDTH_INCH, A4_HEIGHT_INCH), facecolor="white")
-            ax.set_facecolor("white")
             ax.axis("off")
             ax.set_aspect("equal")
 
@@ -33,9 +34,8 @@ class DoorDrawingPDF:
 
             # --- Fit entire drawing properly ---
             try:
-                # get extents from entities directly
                 extents = msp.bbox()
-                if getattr(extents, "has_data", False):
+                if getattr(extents, "has_data", False) and extents.has_data:
                     xmin, ymin = extents.extmin
                     xmax, ymax = extents.extmax
                     width = xmax - xmin
@@ -50,11 +50,14 @@ class DoorDrawingPDF:
             except Exception:
                 ax.relim()
                 ax.autoscale_view()
-
-            # --- Enforce black lines ---
+            
+            # --- Manual Color Remapping (Crucial for older versions) ---
+            # Iterate over all line objects created by the backend and force them black 
+            # so they contrast against the white background.
             for line in ax.get_lines():
-                line.set_color("black")
-                line.set_linewidth(0.8)
+                 # Use a visible color like black or a dark gray for all lines
+                line.set_color("black") 
+                line.set_linewidth(0.8) # Optional: standardize linewidth
 
             # --- Save ---
             fig.savefig(
@@ -62,11 +65,14 @@ class DoorDrawingPDF:
                 dpi=600,
                 bbox_inches="tight",
                 pad_inches=0.05,
-                facecolor="white"
+                facecolor="white", # Explicitly save figure with white background
+                transparent=False,
             )
             plt.close(fig)
 
             print(f"✅ PDF exported successfully: {pdf_file_name}")
 
+        except ImportError:
+             print("❌ Required libraries not installed. Please install matplotlib: `pip install matplotlib`")
         except Exception as e:
             print(f"❌ PDF export failed: {e}")

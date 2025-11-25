@@ -15,6 +15,13 @@ from starlette.responses import Response as StarletteResponse
 import ipaddress
 from fastapi.responses import JSONResponse
 
+# Configure fontconfig for Linux systems BEFORE any imports that use fonts
+if os.name == 'posix':  # Linux/Unix
+    if 'FONTCONFIG_PATH' not in os.environ:
+        os.environ['FONTCONFIG_PATH'] = '/etc/fonts'
+    if 'FONTCONFIG_FILE' not in os.environ:
+        os.environ['FONTCONFIG_FILE'] = '/etc/fonts/fonts.conf'
+
 # --- Add this to ensure imports work correctly ---
 # If your main FastAPI app is under /fastapi_app and BatchDoorDXFGenerator.py is in parent folder
 sys.path.append(str(Path(__file__).resolve().parents[1]))

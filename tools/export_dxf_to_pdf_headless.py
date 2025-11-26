@@ -7,33 +7,22 @@ from ezdxf.addons.drawing.properties import RenderContext
 from ezdxf.addons.drawing.frontend import Frontend
 from ezdxf.addons.drawing import layout, config
 from ezdxf.addons.drawing.pymupdf import PyMuPdfBackend
-import fitz # Import fitz directly for clarity
 
-# 🔹 Explicit Font Embedding (Works on EC2)
+# The FONT_PATHS list and the global FOUND_FONT_PATH are no longer used for mapping,
+# as we rely on the OS config, but the register function remains for clarity.
 FONT_PATHS = [
     "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
-    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    # ... other paths are irrelevant now
 ]
 
-# Global variable to store the found font path for later use
-FOUND_FONT_PATH: Optional[str] = None
+# We no longer need this global variable, rely entirely on the OS.
+# FOUND_FONT_PATH: Optional[str] = None 
 
 def register_fallback_font():
-    """Ensure PyMuPDF has a valid TrueType fallback font and captures the path."""
-    global FOUND_FONT_PATH
-    try:
-        fitz.TOOLS.set_small_glyph_heights(True)
-
-        for path in FONT_PATHS:
-            if os.path.exists(path):
-                fitz.Font(fontfile=path)  # Full font embed
-                FOUND_FONT_PATH = path
-                print(f"✔ Registered fallback and found font path: {path}")
-                return
-        print("⚠ No fallback font file found. Text may render as boxes.")
-    except ImportError:
-        print("⚠ PyMuPDF (fitz) not available – font registration skipped.")
+    """Rely entirely on system font configuration (fontconfig)."""
+    print("Relying on system font configuration (fontconfig) for font resolution.")
+    # No fitz imports or font path finding needed here anymore.
+    pass
 
 # Register font at startup (EC2 compatible)
 register_fallback_font()
@@ -53,7 +42,7 @@ def export_dxf_to_pdf_headless(
     pdf_path: Union[str, os.PathLike],
     margin_mm: float = 8.0,
 ):
-    """DXF ➜ PDF Export using PyMuPDF with TrueType fonts."""
+    """DXF ➜ PDF Export using PyMuPDF with TrueType fonts via system fallbacks."""
     if isinstance(dxf_source, Drawing):
         doc = dxf_source
     else:
@@ -67,18 +56,8 @@ def export_dxf_to_pdf_headless(
     for pt in msp.query("POINT"):
         pt.dxf.pdmode = pt.dxf.get("pdmode", 0)
         pt.dxf.pdsize = pt.dxf.get("pdsize", 1.0)
-
-    # 👇 Revert to original strategy, but ensure FOUND_FONT_PATH is used if available
-    # This is how your local environment worked, let's make sure it runs on EC2
-    if FOUND_FONT_PATH:
-        print(f"Assigning physical path to DXF styles: {FOUND_FONT_PATH}")
-        for style in doc.styles:
-            # Assign the absolute file path as the font name
-            style.dxf.font = FOUND_FONT_PATH
-    else:
-        print("⚠ Cannot assign font path to styles, FOUND_FONT_PATH is None.")
    
-    # 🔹 Render
+    # 🔹 Render Setup
     context = RenderContext(doc)
     backend = PyMuPdfBackend()
     cfg = config.Configuration(
@@ -88,7 +67,10 @@ def export_dxf_to_pdf_headless(
     frontend = Frontend(context, backend, config=cfg)
     backend.set_background("#FFFFFF")
 
-    # The frontend should now be able to resolve the full path assigned in the style
+    # 👇 FONT FIX: Do not manipulate doc.styles or internal font maps here.
+    # We let the DXF use its default styles (like "Standard" or "Arial").
+    # The OS fontconfig intercepts these names and points to the DejaVuSans .ttf file.
+   
     frontend.draw_layout(msp)
 
     # 🔹 PDF Page Setup (Pylance type errors fixed by unpacking A4_PORTRAIT_MM earlier)

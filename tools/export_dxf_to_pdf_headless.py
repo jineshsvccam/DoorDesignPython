@@ -2,10 +2,10 @@ import sys
 import os
 from typing import Union, Optional, Callable, cast
 import ezdxf
-from ezdxf.addons.drawing import layout, config
 from ezdxf.document import Drawing
 from ezdxf.addons.drawing.properties import RenderContext
 from ezdxf.addons.drawing.frontend import Frontend
+from ezdxf.addons.drawing import layout, config
 from ezdxf.addons.drawing.pymupdf import PyMuPdfBackend
 import fitz # Import fitz directly for clarity
 
@@ -16,7 +16,7 @@ FONT_PATHS = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 ]
 
-# Global variable to store the found font path for later use in export function
+# Global variable to store the found font path for later use
 FOUND_FONT_PATH: Optional[str] = None
 
 def register_fallback_font():
@@ -27,7 +27,7 @@ def register_fallback_font():
 
         for path in FONT_PATHS:
             if os.path.exists(path):
-                fitz.Font(fontfile=path)
+                fitz.Font(fontfile=path)  # Full font embed
                 FOUND_FONT_PATH = path
                 print(f"✔ Registered fallback and found font path: {path}")
                 return
@@ -68,20 +68,18 @@ def export_dxf_to_pdf_headless(
         pt.dxf.pdmode = pt.dxf.get("pdmode", 0)
         pt.dxf.pdsize = pt.dxf.get("pdsize", 1.0)
 
-    # 👇 FIX 1 (Font Management): Force access to the internal font map via sys.modules
+    # 👇 Revert to original strategy, but ensure FOUND_FONT_PATH is used if available
+    # This is how your local environment worked, let's make sure it runs on EC2
     if FOUND_FONT_PATH:
-        print(f"Configuring internal font map for 'DejaVuSans' via sys.modules access...")
-        try:
-            # Access the internal font mapping dictionary directly
-            # This is a low-level hack to bypass Pylance strictness
-            sys.modules["ezdxf.addons.drawing.setup_fonts"].FONT_MAP["DejaVuSans"] = FOUND_FONT_PATH
-        except KeyError:
-            print("⚠ Failed to access internal ezdxf font map via sys.modules. Check ezdxf installation.")
+        print(f"Assigning physical path to DXF styles: {FOUND_FONT_PATH}")
+        for style in doc.styles:
+            # Assign the absolute file path as the font name
+            style.dxf.font = FOUND_FONT_PATH
     else:
-        print("⚠ Could not find a suitable font path to configure!")
-
-    # 🔹 Render Setup
-    context = RenderContext(doc) 
+        print("⚠ Cannot assign font path to styles, FOUND_FONT_PATH is None.")
+   
+    # 🔹 Render
+    context = RenderContext(doc)
     backend = PyMuPdfBackend()
     cfg = config.Configuration(
         background_policy=config.BackgroundPolicy.WHITE,
@@ -90,16 +88,12 @@ def export_dxf_to_pdf_headless(
     frontend = Frontend(context, backend, config=cfg)
     backend.set_background("#FFFFFF")
 
-    # 👇 FIX 2: Normalize all text styles to use the registered logical font name
-    for style in doc.styles:
-        if style.dxf.font != "DejaVuSans":
-            style.dxf.font = "DejaVuSans"
-   
+    # The frontend should now be able to resolve the full path assigned in the style
     frontend.draw_layout(msp)
 
-    # 🔹 PDF Page Setup
+    # 🔹 PDF Page Setup (Pylance type errors fixed by unpacking A4_PORTRAIT_MM earlier)
     page = layout.Page(
-        A4_WIDTH_MM, 
+        A4_WIDTH_MM,
         A4_HEIGHT_MM,
         layout.Units.mm,
         margins=layout.Margins.all(margin_mm)

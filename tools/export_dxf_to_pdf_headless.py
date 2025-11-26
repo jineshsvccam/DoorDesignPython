@@ -62,6 +62,10 @@ def export_dxf_to_pdf_headless(
         pt.dxf.pdmode = pt.dxf.get("pdmode", 0)
         pt.dxf.pdsize = pt.dxf.get("pdsize", 1.0)
 
+    # 🔹 Normalize all text styles to use DejaVuSans
+    for style in doc.styles:
+        style.dxf.font = "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf"
+   
     # 🔹 Render
     context = RenderContext(doc)
     backend = PyMuPdfBackend()

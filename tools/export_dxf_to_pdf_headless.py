@@ -2,11 +2,12 @@ import sys
 import os
 from typing import Union, Optional, Callable, cast
 import ezdxf
+from ezdxf.addons.drawing import layout, config
 from ezdxf.document import Drawing
 from ezdxf.addons.drawing.properties import RenderContext
 from ezdxf.addons.drawing.frontend import Frontend
-from ezdxf.addons.drawing import layout, config
 from ezdxf.addons.drawing.pymupdf import PyMuPdfBackend
+import fitz # Import fitz directly for clarity
 
 # 🔹 Explicit Font Embedding (Works on EC2)
 FONT_PATHS = [
@@ -15,26 +16,31 @@ FONT_PATHS = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 ]
 
+# Global variable to store the found font path for later use in export function
+FOUND_FONT_PATH: Optional[str] = None
+
 def register_fallback_font():
-    """Ensure PyMuPDF has a valid TrueType fallback font."""
+    """Ensure PyMuPDF has a valid TrueType fallback font and captures the path."""
+    global FOUND_FONT_PATH
     try:
-        import fitz  # PyMuPDF
         fitz.TOOLS.set_small_glyph_heights(True)
 
         for path in FONT_PATHS:
             if os.path.exists(path):
-                fitz.Font(fontfile=path)  # Full font embed
-                print(f"✔ Registered fallback font: {path}")
+                fitz.Font(fontfile=path)
+                FOUND_FONT_PATH = path
+                print(f"✔ Registered fallback and found font path: {path}")
                 return
         print("⚠ No fallback font file found. Text may render as boxes.")
     except ImportError:
-        print("⚠ PyMuPDF not available – font registration skipped.")
+        print("⚠ PyMuPDF (fitz) not available – font registration skipped.")
 
 # Register font at startup (EC2 compatible)
 register_fallback_font()
 
 # 📄 A4 Portrait size in mm
 A4_PORTRAIT_MM = (210.0, 297.0)
+A4_WIDTH_MM, A4_HEIGHT_MM = A4_PORTRAIT_MM # Unpack the tuple for clarity
 
 # Safe readfile detection
 ezdxf_readfile: Optional[Callable] = (
@@ -62,12 +68,20 @@ def export_dxf_to_pdf_headless(
         pt.dxf.pdmode = pt.dxf.get("pdmode", 0)
         pt.dxf.pdsize = pt.dxf.get("pdsize", 1.0)
 
-    # 🔹 Normalize all text styles to use DejaVuSans
-    for style in doc.styles:
-        style.dxf.font = "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf"
-   
-    # 🔹 Render
-    context = RenderContext(doc)
+    # 👇 FIX 1 (Font Management): Force access to the internal font map via sys.modules
+    if FOUND_FONT_PATH:
+        print(f"Configuring internal font map for 'DejaVuSans' via sys.modules access...")
+        try:
+            # Access the internal font mapping dictionary directly
+            # This is a low-level hack to bypass Pylance strictness
+            sys.modules["ezdxf.addons.drawing.setup_fonts"].FONT_MAP["DejaVuSans"] = FOUND_FONT_PATH
+        except KeyError:
+            print("⚠ Failed to access internal ezdxf font map via sys.modules. Check ezdxf installation.")
+    else:
+        print("⚠ Could not find a suitable font path to configure!")
+
+    # 🔹 Render Setup
+    context = RenderContext(doc) 
     backend = PyMuPdfBackend()
     cfg = config.Configuration(
         background_policy=config.BackgroundPolicy.WHITE,
@@ -76,11 +90,17 @@ def export_dxf_to_pdf_headless(
     frontend = Frontend(context, backend, config=cfg)
     backend.set_background("#FFFFFF")
 
+    # 👇 FIX 2: Normalize all text styles to use the registered logical font name
+    for style in doc.styles:
+        if style.dxf.font != "DejaVuSans":
+            style.dxf.font = "DejaVuSans"
+   
     frontend.draw_layout(msp)
 
     # 🔹 PDF Page Setup
     page = layout.Page(
-        A4_PORTRAIT_MM[0], A4_PORTRAIT_MM[1],
+        A4_WIDTH_MM, 
+        A4_HEIGHT_MM,
         layout.Units.mm,
         margins=layout.Margins.all(margin_mm)
     )

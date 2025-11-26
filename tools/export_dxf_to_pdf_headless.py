@@ -8,20 +8,31 @@ from ezdxf.addons.drawing.frontend import Frontend
 from ezdxf.addons.drawing import layout, config
 from ezdxf.addons.drawing.pymupdf import PyMuPdfBackend
 
-# Configure fontconfig for Linux systems to find system fonts
+# 🔹 --- Fix Font Discovery on EC2 (Linux) ---
 if os.name == 'posix':  # Linux/Unix
-    # Ensure fontconfig knows about system fonts
-    if 'FONTCONFIG_PATH' not in os.environ:
-        os.environ['FONTCONFIG_PATH'] = '/etc/fonts'
-    if 'FONTCONFIG_FILE' not in os.environ:
-        os.environ['FONTCONFIG_FILE'] = '/etc/fonts/fonts.conf'
+    # Ensure system fonts are visible
+    os.environ.setdefault("FONTCONFIG_PATH", "/etc/fonts")
+    os.environ.setdefault("FONTCONFIG_FILE", "/etc/fonts/fonts.conf")
 
-# --- Constants ---
+    # Register common fallback fonts manually (PyMuPDF)
+    try:
+        import fitz  # PyMuPDF
+        fitz.TOOLS.set_small_glyph_heights(True)  # Helps render text better
+        # Try to register fonts (EC2 usually has these)
+        FONT_NAMES = ["DejaVuSans", "LiberationSans-Regular", "Arial", "Helvetica"]
+        for fn in FONT_NAMES:
+            try:
+                fitz.Font(fn)  # register if available
+                print(f"Registered font: {fn}")
+            except Exception:
+                pass
+    except ImportError:
+        print("PyMuPDF font registration skipped (fitz not available)")
 
-# Define a standard page size (A4 portrait) in millimeters
+# 📄 Constants: A4 Portrait size in mm
 A4_PORTRAIT_MM = (210.0, 297.0)
 
-# Provide a typed alias for ezdxf.readfile using getattr as a safe fallback
+# Safe ezdxf.readfile alias
 _ezdxf_readfile_attr = getattr(ezdxf, "readfile", None)
 ezdxf_readfile: Optional[Callable[[Union[str, os.PathLike]], Drawing]] = (
     cast(Callable[[Union[str, os.PathLike]], Drawing], _ezdxf_readfile_attr)
@@ -29,40 +40,29 @@ ezdxf_readfile: Optional[Callable[[Union[str, os.PathLike]], Drawing]] = (
     else None
 )
 
-# --- Main Function ---
-
 def export_dxf_to_pdf_headless(
     dxf_source: Union[str, os.PathLike, Drawing],
     pdf_path: Union[str, os.PathLike],
-    margin_mm: float = 5.0,
-    skip_problematic: bool = True,
+    margin_mm: float = 8.0,
+    skip_problematic: bool = False,  # Now render all text also
 ):
     """
-    Simple DXF -> PDF exporter using PyMuPDF backend.
-
-    This implementation accepts either an ezdxf Drawing object or a path to a DXF file.
-
-    Args:
-        dxf_source: Path to the DXF file or an existing ezdxf Drawing object.
-        pdf_path: The path where the output PDF should be saved.
-        margin_mm: Margins in millimeters for the PDF page.
-        skip_problematic: If True, filters out known problematic entities (POINT, TEXT, MTEXT)
-                          during rendering to prevent potential crashes in older ezdxf versions.
+    DXF ➜ PDF Export using PyMuPDF
+    Supports TrueType font rendering properly in EC2.
     """
     doc: Drawing
 
-    # 1. Load the DXF document
+    # 🔹 Load DXF file
     if isinstance(dxf_source, Drawing):
         doc = dxf_source
     else:
         if not ezdxf_readfile:
-             raise RuntimeError("ezdxf.readfile function is not available in the installed ezdxf version.")
-        
+            raise RuntimeError("ezdxf.readfile is unavailable in ezdxf version.")
         doc = ezdxf_readfile(str(dxf_source))
 
     msp = doc.modelspace()
 
-    # 2. Sanitize POINT entities using the widely compatible .query() method
+    # 🔹 Fix POINT entities (avoids random crashes)
     try:
         for pt in msp.query("POINT"):
             if pt.dxf.get("pdmode") is None:
@@ -70,71 +70,58 @@ def export_dxf_to_pdf_headless(
             if pt.dxf.get("pdsize") is None:
                 pt.dxf.pdsize = 1.0
     except Exception as e:
-        print(f"Warning: Failed to sanitize POINT entities. Continuing anyway. Error: {e}", file=sys.stderr)
+        print(f"Warning: POINT sanitization failed. {e}", file=sys.stderr)
 
-    # 3. Setup renderer pipeline
+    # 🔹 Setup rendering pipeline
     context = RenderContext(doc)
     backend = PyMuPdfBackend()
-    
-    # Configure frontend with a white background policy
-    cfg = config.Configuration(background_policy=config.BackgroundPolicy.WHITE)
+
+    cfg = config.Configuration(
+        background_policy=config.BackgroundPolicy.WHITE,
+        lineweight_scaling=1.0)
+       
     frontend = Frontend(context, backend, config=cfg)
 
-    # Ensure backend uses white background explicitly if possible
     try:
         backend.set_background("#FFFFFF")
     except Exception:
         pass
 
-    # 4. Draw modelspace, optionally skipping problematic entities
-    if skip_problematic:
-        def _no_problematic(entity):
-            """Filter function to skip problematic entity types."""
-            try:
-                return entity.dxftype() not in ("POINT", "TEXT", "MTEXT")
-            except Exception:
-                return False
+    # 🔹 Draw all entities (include text, MTEXT, DIMENSION)
+    frontend.draw_layout(msp)
 
-        try:
-            frontend.draw_layout(msp, filter_func=_no_problematic)
-        except TypeError:
-            print("Info: ezdxf version does not support filter_func; drawing without filtering.", file=sys.stderr)
-            frontend.draw_layout(msp)
-    else:
-        frontend.draw_layout(msp)
-
-    # 5. Finalize the PDF export with requested parameters
+    # 🔹 PDF Page Setup
     mm_w, mm_h = A4_PORTRAIT_MM
-    page = layout.Page(mm_w, mm_h, layout.Units.mm, margins=layout.Margins.all(margin_mm))
+    page = layout.Page(
+        mm_w, mm_h,
+        layout.Units.mm,
+        margins=layout.Margins.all(margin_mm)
+    )
 
     pdf_bytes = backend.get_pdf_bytes(page)
-    
+
     with open(pdf_path, "wb") as fp:
         fp.write(pdf_bytes)
 
-    print(f"Exported DXF to PDF: {pdf_path}")
+    print(f"🎯 Exported DXF to PDF successfully ➜ {pdf_path}")
 
-# --- Example Usage (Main Method Updated) ---
+
+# 🚀 Example Usage
 if __name__ == "__main__":
-    # Define the input and output file names relative to the script location
     input_dxf_file = "door_F14P2.dxf"
     output_pdf_file = "door_F14P2.pdf"
-    
-    # Check if the specific DXF file exists before trying to process it
+
     if os.path.exists(input_dxf_file):
-        print(f"Attempting to process {input_dxf_file}...")
+        print(f"Processing: {input_dxf_file}...")
         try:
-            # Call the main function with the specified file names
             export_dxf_to_pdf_headless(
                 dxf_source=input_dxf_file,
                 pdf_path=output_pdf_file,
-                margin_mm=10.0 # Example margin setting
+                margin_mm=10.0
             )
         except Exception as e:
-            print(f"\nAn error occurred during DXF processing: {e}")
+            print(f"\n❌ DXF processing error: {e}")
             sys.exit(1)
     else:
-        print(f"Error: The file '{input_dxf_file}' was not found in the current directory.")
-        print("Please ensure the file is present or provide correct paths via command line arguments.")
-        print("Usage (if you prefer command line args): python script_name.py input.dxf output.pdf")
+        print(f"⚠ DXF file '{input_dxf_file}' not found.")
         sys.exit(1)

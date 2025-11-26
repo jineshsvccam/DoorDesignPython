@@ -8,92 +8,75 @@ from ezdxf.addons.drawing.frontend import Frontend
 from ezdxf.addons.drawing import layout, config
 from ezdxf.addons.drawing.pymupdf import PyMuPdfBackend
 
-# 🔹 --- Fix Font Discovery on EC2 (Linux) ---
-if os.name == 'posix':  # Linux/Unix
-    # Ensure system fonts are visible
-    os.environ.setdefault("FONTCONFIG_PATH", "/etc/fonts")
-    os.environ.setdefault("FONTCONFIG_FILE", "/etc/fonts/fonts.conf")
+# 🔹 Explicit Font Embedding (Works on EC2)
+FONT_PATHS = [
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSansMono.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+]
 
-    # Register common fallback fonts manually (PyMuPDF)
+def register_fallback_font():
+    """Ensure PyMuPDF has at least one working TrueType font."""
     try:
         import fitz  # PyMuPDF
-        fitz.TOOLS.set_small_glyph_heights(True)  # Helps render text better
-        # Try to register fonts (EC2 usually has these)
-        FONT_NAMES = ["DejaVuSans", "LiberationSans-Regular", "Arial", "Helvetica"]
-        for fn in FONT_NAMES:
-            try:
-                fitz.Font(fn)  # register if available
-                print(f"Registered font: {fn}")
-            except Exception:
-                pass
-    except ImportError:
-        print("PyMuPDF font registration skipped (fitz not available)")
+        fitz.TOOLS.set_small_glyph_heights(True)
 
-# 📄 Constants: A4 Portrait size in mm
+        for path in FONT_PATHS:
+            if os.path.exists(path):
+                fitz.Font(fontfile=path)  # full font embed
+                print(f"✔ Registered fallback font: {path}")
+                return
+        print("⚠ No fallback font file found in system. Text may render as boxes.")
+    except ImportError:
+        print("⚠ PyMuPDF not available – font registration skipped.")
+
+# Register font at startup (EC2 compatible)
+register_fallback_font()
+
+# 📄 A4 Portrait size in mm
 A4_PORTRAIT_MM = (210.0, 297.0)
 
-# Safe ezdxf.readfile alias
-_ezdxf_readfile_attr = getattr(ezdxf, "readfile", None)
-ezdxf_readfile: Optional[Callable[[Union[str, os.PathLike]], Drawing]] = (
-    cast(Callable[[Union[str, os.PathLike]], Drawing], _ezdxf_readfile_attr)
-    if callable(_ezdxf_readfile_attr)
-    else None
+# Safe readfile detection
+ezdxf_readfile: Optional[Callable] = (
+    cast(Callable, getattr(ezdxf, "readfile", None))
+    if callable(getattr(ezdxf, "readfile", None)) else None
 )
 
 def export_dxf_to_pdf_headless(
     dxf_source: Union[str, os.PathLike, Drawing],
     pdf_path: Union[str, os.PathLike],
     margin_mm: float = 8.0,
-    skip_problematic: bool = False,  # Now render all text also
 ):
-    """
-    DXF ➜ PDF Export using PyMuPDF
-    Supports TrueType font rendering properly in EC2.
-    """
-    doc: Drawing
-
-    # 🔹 Load DXF file
+    """DXF ➜ PDF Export using PyMuPDF with TrueType fonts."""
     if isinstance(dxf_source, Drawing):
         doc = dxf_source
     else:
         if not ezdxf_readfile:
-            raise RuntimeError("ezdxf.readfile is unavailable in ezdxf version.")
+            raise RuntimeError("ezdxf.readfile unavailable.")
         doc = ezdxf_readfile(str(dxf_source))
 
     msp = doc.modelspace()
 
-    # 🔹 Fix POINT entities (avoids random crashes)
-    try:
-        for pt in msp.query("POINT"):
-            if pt.dxf.get("pdmode") is None:
-                pt.dxf.pdmode = 0
-            if pt.dxf.get("pdsize") is None:
-                pt.dxf.pdsize = 1.0
-    except Exception as e:
-        print(f"Warning: POINT sanitization failed. {e}", file=sys.stderr)
+    # 🔹 Fix POINT entities
+    for pt in msp.query("POINT"):
+        pt.dxf.pdmode = pt.dxf.get("pdmode", 0)
+        pt.dxf.pdsize = pt.dxf.get("pdsize", 1.0)
 
-    # 🔹 Setup rendering pipeline
+    # 🔹 Render
     context = RenderContext(doc)
     backend = PyMuPdfBackend()
-
     cfg = config.Configuration(
         background_policy=config.BackgroundPolicy.WHITE,
-        lineweight_scaling=1.0)
-       
+        lineweight_scaling=1.0
+    )
     frontend = Frontend(context, backend, config=cfg)
+    backend.set_background("#FFFFFF")
 
-    try:
-        backend.set_background("#FFFFFF")
-    except Exception:
-        pass
-
-    # 🔹 Draw all entities (include text, MTEXT, DIMENSION)
     frontend.draw_layout(msp)
 
     # 🔹 PDF Page Setup
-    mm_w, mm_h = A4_PORTRAIT_MM
     page = layout.Page(
-        mm_w, mm_h,
+        A4_PORTRAIT_MM[0], A4_PORTRAIT_MM[1],
         layout.Units.mm,
         margins=layout.Margins.all(margin_mm)
     )
@@ -105,7 +88,6 @@ def export_dxf_to_pdf_headless(
 
     print(f"🎯 Exported DXF to PDF successfully ➜ {pdf_path}")
 
-
 # 🚀 Example Usage
 if __name__ == "__main__":
     input_dxf_file = "door_F14P2.dxf"
@@ -113,15 +95,7 @@ if __name__ == "__main__":
 
     if os.path.exists(input_dxf_file):
         print(f"Processing: {input_dxf_file}...")
-        try:
-            export_dxf_to_pdf_headless(
-                dxf_source=input_dxf_file,
-                pdf_path=output_pdf_file,
-                margin_mm=10.0
-            )
-        except Exception as e:
-            print(f"\n❌ DXF processing error: {e}")
-            sys.exit(1)
+        export_dxf_to_pdf_headless(input_dxf_file, output_pdf_file, margin_mm=10.0)
     else:
         print(f"⚠ DXF file '{input_dxf_file}' not found.")
         sys.exit(1)

@@ -10,23 +10,23 @@ from ezdxf.addons.drawing.pymupdf import PyMuPdfBackend
 
 # 🔹 Explicit Font Embedding (Works on EC2)
 FONT_PATHS = [
+    "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
     "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/dejavu/DejaVuSansMono.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 ]
 
 def register_fallback_font():
-    """Ensure PyMuPDF has at least one working TrueType font."""
+    """Ensure PyMuPDF has a valid TrueType fallback font."""
     try:
         import fitz  # PyMuPDF
         fitz.TOOLS.set_small_glyph_heights(True)
 
         for path in FONT_PATHS:
             if os.path.exists(path):
-                fitz.Font(fontfile=path)  # full font embed
+                fitz.Font(fontfile=path)  # Full font embed
                 print(f"✔ Registered fallback font: {path}")
                 return
-        print("⚠ No fallback font file found in system. Text may render as boxes.")
+        print("⚠ No fallback font file found. Text may render as boxes.")
     except ImportError:
         print("⚠ PyMuPDF not available – font registration skipped.")
 
@@ -57,7 +57,7 @@ def export_dxf_to_pdf_headless(
 
     msp = doc.modelspace()
 
-    # 🔹 Fix POINT entities
+    # 🔹 Fix POINT entities (prevent small dot size issues)
     for pt in msp.query("POINT"):
         pt.dxf.pdmode = pt.dxf.get("pdmode", 0)
         pt.dxf.pdsize = pt.dxf.get("pdsize", 1.0)

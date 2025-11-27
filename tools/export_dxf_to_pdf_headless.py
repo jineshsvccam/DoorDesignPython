@@ -8,14 +8,12 @@ from ezdxf.addons.drawing.frontend import Frontend
 from ezdxf.addons.drawing import layout, config
 from ezdxf.addons.drawing.pymupdf import PyMuPdfBackend
 
-
-def register_fallback_font():
-    """Font handling is delegated to system fontconfig and PyMuPDF."""
-    print("Using system font configuration for font resolution.")
-    pass
-
-
-register_fallback_font()
+# Configure fontconfig for Linux systems to find system fonts
+if os.name == 'posix':  # Linux/Unix
+    if 'FONTCONFIG_PATH' not in os.environ:
+        os.environ['FONTCONFIG_PATH'] = '/etc/fonts'
+    if 'FONTCONFIG_FILE' not in os.environ:
+        os.environ['FONTCONFIG_FILE'] = '/etc/fonts/fonts.conf'
 
 # 📄 A4 Portrait size in mm
 A4_PORTRAIT_MM = (210.0, 297.0)
@@ -35,7 +33,7 @@ def export_dxf_to_pdf_headless(
 ):
     """
     DXF ➜ PDF Export using PyMuPDF backend.
-    Respects OS-level font resolution (Windows fonts now installed).
+    Uses system-installed fonts like Arial or Calibri.
     """
 
     # 🔹 Load DXF
@@ -56,6 +54,7 @@ def export_dxf_to_pdf_headless(
     # 🔹 Render Setup
     context = RenderContext(doc)
     backend = PyMuPdfBackend()
+
     cfg = config.Configuration(
         background_policy=config.BackgroundPolicy.WHITE,
         lineweight_scaling=1.0,
@@ -65,7 +64,6 @@ def export_dxf_to_pdf_headless(
     frontend = Frontend(context, backend, config=cfg)
     backend.set_background("#FFFFFF")  # White background
 
-    # 👇 Don’t override fonts manually — use system fonts (like Windows fonts installed)
     frontend.draw_layout(msp)
 
     # 📄 Page Setup (A4 with margin)

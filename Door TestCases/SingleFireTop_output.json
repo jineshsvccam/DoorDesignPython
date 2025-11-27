@@ -3,8 +3,8 @@
   "door_type": "Fire",
   "option": "Option2",
   "metadata": {
-    "label": "Single_door",
-    "file_name": "Single_door.dxf",
+    "label": "SingleFireTop",
+    "file_name": "SingleFireTop.dxf",
     "width": 613.0,
     "height": 1084.0,
     "rotated": false,
@@ -832,7 +832,7 @@
     "labels": [
       {
         "type": "center_label",
-        "text": "Single_door",
+        "text": "SingleFireTop",
         "position": [
           563.0,
           542.0

@@ -3,8 +3,8 @@
   "door_type": "Fire",
   "option": "Option5",
   "metadata": {
-    "label": "Single_door",
-    "file_name": "Single_door.dxf",
+    "label": "DoubleFourGlass",
+    "file_name": "DoubleFourGlass.dxf",
     "width": 1296.0,
     "height": 1619.0,
     "rotated": false,
@@ -1852,7 +1852,7 @@
     "labels": [
       {
         "type": "center_label",
-        "text": "Single_door",
+        "text": "DoubleFourGlass",
         "position": [
           1246.0,
           809.5

@@ -84,11 +84,11 @@
             486.0
           ],
           [
-            71.0,
+            74.0,
             486.0
           ],
           [
-            71.0,
+            74.0,
             598.0
           ],
           [
@@ -381,11 +381,11 @@
             486.0
           ],
           "to": [
-            71.0,
+            74.0,
             486.0
           ],
-          "text": "W 22.0",
-          "offset": -6.0,
+          "text": "W 25.0",
+          "offset": 6.0,
           "angle": 0.0,
           "text_offset": null,
           "category": "cutout",
@@ -394,15 +394,15 @@
         {
           "type": "dimension",
           "from_": [
-            49.0,
+            74.0,
             486.0
           ],
           "to": [
-            49.0,
+            74.0,
             598.0
           ],
           "text": "H 112.0",
-          "offset": -6.0,
+          "offset": 6.0,
           "angle": 90.0,
           "text_offset": null,
           "category": "cutout",
@@ -419,7 +419,7 @@
             252.0
           ],
           "text": "W 202.0",
-          "offset": -9.0,
+          "offset": 9.0,
           "angle": 0.0,
           "text_offset": null,
           "category": "cutout",
@@ -428,15 +428,15 @@
         {
           "type": "dimension",
           "from_": [
-            209.0,
+            411.0,
             252.0
           ],
           "to": [
-            209.0,
+            411.0,
             902.0
           ],
           "text": "H 650.0",
-          "offset": -9.0,
+          "offset": 9.0,
           "angle": 90.0,
           "text_offset": null,
           "category": "cutout",
@@ -453,7 +453,7 @@
             62.0
           ],
           "text": "W 70.0",
-          "offset": -12.0,
+          "offset": 12.0,
           "angle": 0.0,
           "text_offset": null,
           "category": "cutout",
@@ -462,15 +462,15 @@
         {
           "type": "dimension",
           "from_": [
-            275.0,
+            345.0,
             62.0
           ],
           "to": [
-            275.0,
+            345.0,
             102.0
           ],
           "text": "H 40.0",
-          "offset": -12.0,
+          "offset": 12.0,
           "angle": 90.0,
           "text_offset": null,
           "category": "cutout",
@@ -568,11 +568,11 @@
         {
           "type": "dimension",
           "from_": [
-            60.0,
+            61.5,
             598.0
           ],
           "to": [
-            60.0,
+            61.5,
             1072.0
           ],
           "text": "G 474.0",
@@ -585,11 +585,11 @@
         {
           "type": "dimension",
           "from_": [
-            60.0,
+            61.5,
             12.0
           ],
           "to": [
-            60.0,
+            61.5,
             486.0
           ],
           "text": "G 474.0",
@@ -657,19 +657,19 @@
         {
           "type": "dimension",
           "from_": [
-            48.0,
+            59.0,
             922.0
           ],
           "to": [
-            70.0,
-            922.0
+            11.0,
+            0.0
           ],
           "text": "Ø22.0",
           "offset": 4.0,
           "angle": 0.0,
           "text_offset": null,
           "category": "hole",
-          "owner": "hole_top"
+          "owner": "hole_top_circle"
         },
         {
           "type": "dimension",
@@ -699,7 +699,7 @@
             1072.0
           ],
           "text": "Y 150.0",
-          "offset": 6.0,
+          "offset": -6.0,
           "angle": 90.0,
           "text_offset": null,
           "category": "hole",
@@ -708,19 +708,19 @@
         {
           "type": "dimension",
           "from_": [
-            48.0,
+            59.0,
             162.0
           ],
           "to": [
-            70.0,
-            162.0
+            11.0,
+            0.0
           ],
           "text": "Ø22.0",
           "offset": 6.0,
           "angle": 0.0,
           "text_offset": null,
           "category": "hole",
-          "owner": "hole_bottom"
+          "owner": "hole_bottom_circle"
         },
         {
           "type": "dimension",
@@ -750,7 +750,7 @@
             162.0
           ],
           "text": "Y 150.0",
-          "offset": 6.0,
+          "offset": -6.0,
           "angle": 90.0,
           "text_offset": null,
           "category": "hole",
@@ -769,7 +769,7 @@
             50.0
           ],
           "text": "G 19.0",
-          "offset": 26.0,
+          "offset": 6.0,
           "angle": 0.0,
           "text_offset": null,
           "category": "frame_gap",
@@ -833,12 +833,18 @@
       {
         "type": "center_label",
         "text": "Single_door",
-        "position": "center"
-      },
-      {
-        "type": "corner_label",
-        "text": "Single_door.dxf",
-        "position": "top_left"
+        "position": [
+          563.0,
+          542.0
+        ],
+        "align": "MIDDLE_RIGHT",
+        "height": 8.0,
+        "style": null,
+        "rotation": 90.0,
+        "layer": "DIMENSIONS",
+        "placement_offset": null,
+        "color": null,
+        "show_dimensions": true
       }
     ]
   }

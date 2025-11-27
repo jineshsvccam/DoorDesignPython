@@ -8,41 +8,37 @@ from ezdxf.addons.drawing.frontend import Frontend
 from ezdxf.addons.drawing import layout, config
 from ezdxf.addons.drawing.pymupdf import PyMuPdfBackend
 
-# The FONT_PATHS list and the global FOUND_FONT_PATH are no longer used for mapping,
-# as we rely on the OS config, but the register function remains for clarity.
-FONT_PATHS = [
-    "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
-    # ... other paths are irrelevant now
-]
-
-# We no longer need this global variable, rely entirely on the OS.
-# FOUND_FONT_PATH: Optional[str] = None 
 
 def register_fallback_font():
-    """Rely entirely on system font configuration (fontconfig)."""
-    print("Relying on system font configuration (fontconfig) for font resolution.")
-    # No fitz imports or font path finding needed here anymore.
+    """Font handling is delegated to system fontconfig and PyMuPDF."""
+    print("Using system font configuration for font resolution.")
     pass
 
-# Register font at startup (EC2 compatible)
+
 register_fallback_font()
 
 # 📄 A4 Portrait size in mm
 A4_PORTRAIT_MM = (210.0, 297.0)
-A4_WIDTH_MM, A4_HEIGHT_MM = A4_PORTRAIT_MM # Unpack the tuple for clarity
+A4_WIDTH_MM, A4_HEIGHT_MM = A4_PORTRAIT_MM
 
-# Safe readfile detection
+# 🛡 Safe ezdxf readfile detection
 ezdxf_readfile: Optional[Callable] = (
     cast(Callable, getattr(ezdxf, "readfile", None))
     if callable(getattr(ezdxf, "readfile", None)) else None
 )
+
 
 def export_dxf_to_pdf_headless(
     dxf_source: Union[str, os.PathLike, Drawing],
     pdf_path: Union[str, os.PathLike],
     margin_mm: float = 8.0,
 ):
-    """DXF ➜ PDF Export using PyMuPDF with TrueType fonts via system fallbacks."""
+    """
+    DXF ➜ PDF Export using PyMuPDF backend.
+    Respects OS-level font resolution (Windows fonts now installed).
+    """
+
+    # 🔹 Load DXF
     if isinstance(dxf_source, Drawing):
         doc = dxf_source
     else:
@@ -52,43 +48,45 @@ def export_dxf_to_pdf_headless(
 
     msp = doc.modelspace()
 
-    # 🔹 Fix POINT entities (prevent small dot size issues)
+    # 🔹 Fix POINT entities visibility
     for pt in msp.query("POINT"):
         pt.dxf.pdmode = pt.dxf.get("pdmode", 0)
         pt.dxf.pdsize = pt.dxf.get("pdsize", 1.0)
-   
+
     # 🔹 Render Setup
     context = RenderContext(doc)
     backend = PyMuPdfBackend()
     cfg = config.Configuration(
         background_policy=config.BackgroundPolicy.WHITE,
-        lineweight_scaling=1.0
+        lineweight_scaling=1.0,
+        min_lineweight=0.15,
     )
-    frontend = Frontend(context, backend, config=cfg)
-    backend.set_background("#FFFFFF")
 
-    # 👇 FONT FIX: Do not manipulate doc.styles or internal font maps here.
-    # We let the DXF use its default styles (like "Standard" or "Arial").
-    # The OS fontconfig intercepts these names and points to the DejaVuSans .ttf file.
-   
+    frontend = Frontend(context, backend, config=cfg)
+    backend.set_background("#FFFFFF")  # White background
+
+    # 👇 Don’t override fonts manually — use system fonts (like Windows fonts installed)
     frontend.draw_layout(msp)
 
-    # 🔹 PDF Page Setup (Pylance type errors fixed by unpacking A4_PORTRAIT_MM earlier)
+    # 📄 Page Setup (A4 with margin)
     page = layout.Page(
-        A4_WIDTH_MM,
-        A4_HEIGHT_MM,
-        layout.Units.mm,
-        margins=layout.Margins.all(margin_mm)
+        width=A4_WIDTH_MM,
+        height=A4_HEIGHT_MM,
+        units=layout.Units.mm,
+        margins=layout.Margins.all(margin_mm),
     )
 
+    # ✨ Generate PDF bytes
     pdf_bytes = backend.get_pdf_bytes(page)
 
+    # 💾 Save File
     with open(pdf_path, "wb") as fp:
         fp.write(pdf_bytes)
 
-    print(f"🎯 Exported DXF to PDF successfully ➜ {pdf_path}")
+    print(f"🎯 Exported DXF ➜ PDF successfully: {pdf_path}")
 
-# 🚀 Example Usage
+
+# 🚀 Example (Run directly)
 if __name__ == "__main__":
     input_dxf_file = "door_F14P2.dxf"
     output_pdf_file = "door_F14P2.pdf"

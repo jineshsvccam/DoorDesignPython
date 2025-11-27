@@ -18,7 +18,6 @@ from geometry.door_geometry import compute_door_geometry
 from fastapi_app.schemas_input import DoorDXFRequest
 from fastapi_app.schemas_output import SchemasOutput
 import logging
-from DoorDrawingPDF import DoorDrawingPDF
 from annotation_styles import styles, CURRENT_STYLE_INDEX
 import os
 import traceback

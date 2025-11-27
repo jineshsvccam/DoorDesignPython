@@ -248,33 +248,15 @@ document.addEventListener("click", (e) => {
         const a = document.createElement("a");
         a.href = url;
         a.download = pdfName;
+        a.style.display = "none";
         document.body.appendChild(a);
-        try {
-          a.click();
-        } catch (e) {
-          console.warn(
-            "Programmatic download failed, will fallback to opening in new tab",
-            e
-          );
-        }
-        a.remove();
+        a.click();
 
-        try {
-          const ua = navigator.userAgent || "";
-          const isChrome =
-            ua.includes("Chrome") && !ua.includes("Edg") && !ua.includes("OPR");
-          if (isChrome && blob && blob.type === "application/pdf") {
-            setTimeout(() => {
-              try {
-                window.open(url, "_blank");
-              } catch (e) {
-                console.warn("Failed to open PDF in new tab as fallback", e);
-              }
-            }, 700);
-          }
-        } catch (e) {
-          /* ignore UA/open errors */
-        }
+        // Clean up after a short delay
+        setTimeout(() => {
+          a.remove();
+          window.URL.revokeObjectURL(url);
+        }, 100);
 
         showToast(`✅ PDF (${pdfName}) generated`, "success");
       } catch (err) {

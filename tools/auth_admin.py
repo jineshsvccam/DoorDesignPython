@@ -11,6 +11,18 @@ from typing import Union
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Load .env file if it exists
+env_file = Path(__file__).resolve().parents[1] / ".env"
+if env_file.exists():
+    with open(env_file) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                # Only set if not already in environment
+                if key not in os.environ:
+                    os.environ[key] = value
+
 from fastapi_app.services.token_service import (
     generate_tokens, get_unused_tokens, create_registration_links,
     mark_token_as_used, TOKENS_FILE_PATH

@@ -6,6 +6,7 @@ Usage: python tools/auth_admin.py [command]
 import sys
 import os
 from pathlib import Path
+from typing import Union
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -25,7 +26,7 @@ def print_header(title):
     print("="*70 + "\n")
 
 
-def cmd_generate(count: int | str = 5) -> None:
+def cmd_generate(count: Union[int, str] = 5) -> None:
     """Generate new registration tokens"""
     print_header("🔑 Generate Registration Tokens")
     

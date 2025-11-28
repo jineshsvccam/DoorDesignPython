@@ -27,6 +27,13 @@ logs/
 fastapi_app/logs/
 output/
 
+# Authentication data (sensitive!)
+fastapi_app/data/tokens.txt
+fastapi_app/data/users.txt
+
+# Environment variables (contains secrets)
+.env
+
 # Temporary / runtime directories
 tmp/
 temp/

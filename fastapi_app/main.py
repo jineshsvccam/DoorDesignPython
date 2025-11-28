@@ -42,12 +42,18 @@ from DoorDrawingGenerator import DoorDrawingGenerator
 from fastapi_app.schemas_input import DoorDXFRequest
 from geometry.door_geometry import compute_door_geometry
 
+# Import auth routes
+from fastapi_app.routes.auth import router as auth_router
+
 # Serve the frontend static files and allow CORS for external UI (optional)
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 app = FastAPI()
+
+# Include auth routes
+app.include_router(auth_router, tags=["Authentication"])
 
 # Process start time for uptime reporting
 START_TIME = time.time()
@@ -107,6 +113,15 @@ if ALLOWED_IPS:
             # ignore malformed entries
             logger.warning("Ignored invalid ALLOWED_IPS entry: %s", t)
 
+# Auth enforcement configuration
+# Set REQUIRE_AUTH=true to enforce cookie-based authentication on all protected endpoints
+REQUIRE_AUTH = os.environ.get("REQUIRE_AUTH", "false").lower() in ("true", "1", "yes")
+# Public paths that don't require authentication
+PUBLIC_PATHS = {
+    "/static", "/register", "/check-auth", 
+    "/health", "/healthz", "/docs", "/openapi.json", "/redoc"
+}
+
 
 # IP whitelist middleware: short-circuit requests from non-whitelisted IPs
 @app.middleware("http")
@@ -143,6 +158,70 @@ async def ip_whitelist_middleware(request: StarletteRequest, call_next):
         }))
         return JSONResponse({"detail": "IP not allowed", "request_id": request_id}, status_code=403, headers={"X-Request-ID": request_id})
 
+    return await call_next(request)
+
+
+# Authentication middleware: check cookies when REQUIRE_AUTH is enabled
+@app.middleware("http")
+async def auth_middleware(request: StarletteRequest, call_next):
+    """Check authentication cookies when REQUIRE_AUTH=true, except for public paths."""
+    if not REQUIRE_AUTH:
+        return await call_next(request)
+    
+    # Check if path is public
+    path = request.url.path
+    is_public = False
+    for public_path in PUBLIC_PATHS:
+        if path == public_path or path.startswith(public_path + "/"):
+            is_public = True
+            break
+    
+    if is_public:
+        return await call_next(request)
+    
+    # Verify authentication cookie
+    try:
+        from fastapi_app.services.cookie_service import get_cookie_token, create_cookie_token
+        from fastapi_app.services.user_service import USERS_FILE_PATH
+        
+        cookie_token = get_cookie_token(request)
+        if not cookie_token:
+            # Return HTML forbidden page
+            forbidden_path = Path(__file__).resolve().parents[1] / "frontend" / "forbidden.html"
+            if forbidden_path.exists():
+                return FileResponse(str(forbidden_path), status_code=401, media_type="text/html")
+            return JSONResponse({"detail": "Authentication required", "redirect": "/register"}, status_code=401)
+        
+        # Validate cookie against registered users
+        if not os.path.exists(USERS_FILE_PATH):
+            forbidden_path = Path(__file__).resolve().parents[1] / "frontend" / "forbidden.html"
+            if forbidden_path.exists():
+                return FileResponse(str(forbidden_path), status_code=401, media_type="text/html")
+            return JSONResponse({"detail": "Authentication required", "redirect": "/register"}, status_code=401)
+        
+        authenticated = False
+        with open(USERS_FILE_PATH, "r") as file:
+            for line in file:
+                parts = [p.strip() for p in line.split("|")]
+                if len(parts) >= 2:
+                    token = parts[0]
+                    status = parts[1]
+                    if status == "active":
+                        expected_hash = create_cookie_token(token)
+                        if cookie_token == expected_hash:
+                            authenticated = True
+                            break
+        
+        if not authenticated:
+            forbidden_path = Path(__file__).resolve().parents[1] / "frontend" / "forbidden.html"
+            if forbidden_path.exists():
+                return FileResponse(str(forbidden_path), status_code=401, media_type="text/html")
+            return JSONResponse({"detail": "Invalid authentication", "redirect": "/register"}, status_code=401)
+        
+    except Exception as e:
+        logger.error(f"Auth middleware error: {e}")
+        return JSONResponse({"detail": "Authentication error"}, status_code=401)
+    
     return await call_next(request)
 
 

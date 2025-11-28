@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Access Restricted</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Oxygen, Ubuntu, Cantarell, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+
+      .container {
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        padding: 50px 40px;
+        text-align: center;
+        max-width: 550px;
+        width: 100%;
+      }
+
+      .company-logo img {
+        max-width: 200px;
+        margin-bottom: 25px;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+
+      h1 {
+        color: #333;
+        font-size: 28px;
+        margin-bottom: 15px;
+        font-weight: 700;
+      }
+
+      p {
+        color: #666;
+        font-size: 16px;
+        line-height: 1.6;
+        margin-bottom: 30px;
+      }
+
+      .button {
+        display: inline-block;
+        background: linear-gradient(135deg, #25d366 0%, #128c7e 100%);
+        color: white;
+        padding: 12px 35px;
+        border-radius: 30px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        box-shadow: 0 4px 15px rgba(37, 211, 102, 0.4);
+      }
+
+      .button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(37, 211, 102, 0.6);
+      }
+
+      .footer-text {
+        margin-top: 30px;
+        color: #999;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <!-- Clickable Company Logo -->
+      <div class="company-logo">
+        <a href="https://www.capitalgainspvtltd.com/" target="_blank">
+          <img
+            src="https://www.capitalgainspvtltd.com/img/Capital-gains-associates-pvt-ltd.jpg"
+            alt="Capital Gains Pvt Ltd"
+          />
+        </a>
+      </div>
+
+      <h1>🚫 Restricted Access</h1>
+
+      <p>
+        This application is exclusively restricted to
+        <strong>Capital Gains Private Limited</strong>.<br /><br />
+        Unauthorized access is prohibited and may be monitored for
+        compliance.<br />
+        If you believe you should have access, please contact the company or
+        reach out to the developer for assistance.
+      </p>
+
+      <!-- WhatsApp Contact Button -->
+      <a
+        href="https://api.whatsapp.com/send?phone=919995812539&text=Hello%2C%20I%20need%20access%20to%20the%20application."
+        target="_blank"
+        class="button"
+      >
+        💬 Contact Developer on WhatsApp
+      </a>
+
+      <p class="footer-text">
+        Entry to this platform requires valid authorization.
+      </p>
+    </div>
+  </body>
+</html>

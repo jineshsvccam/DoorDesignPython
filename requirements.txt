@@ -9,6 +9,7 @@ rectpack==0.1.0
 matplotlib==3.8.2
 debugpy==1.6.7
 numpy>=1.24.0
+requests>=2.31.0
 
 # GUI backend required for tools/export_dxf_to_pdf.py (either PyQt5 or PySide6)
 PyQt5>=5.15.9

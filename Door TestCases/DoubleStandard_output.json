@@ -346,7 +346,7 @@
         ]
       },
       {
-        "name": "glass_top_right",
+        "name": "glass_bottom_left",
         "layer": "CUT",
         "points": [
           [
@@ -803,7 +803,7 @@
           "angle": 0.0,
           "text_offset": null,
           "category": "cutout",
-          "owner": "glass_top_right"
+          "owner": "glass_bottom_left"
         },
         {
           "type": "dimension",
@@ -820,7 +820,7 @@
           "angle": 90.0,
           "text_offset": null,
           "category": "cutout",
-          "owner": "glass_top_right"
+          "owner": "glass_bottom_left"
         },
         {
           "type": "dimension",
@@ -941,7 +941,7 @@
           "angle": 0.0,
           "text_offset": null,
           "category": "glass_cut",
-          "owner": "glass_top_right"
+          "owner": "glass_bottom_left"
         },
         {
           "type": "dimension",
@@ -958,7 +958,7 @@
           "angle": 0.0,
           "text_offset": null,
           "category": "glass_cut",
-          "owner": "glass_top_right"
+          "owner": "glass_bottom_left"
         },
         {
           "type": "dimension",
@@ -975,7 +975,7 @@
           "angle": 90.0,
           "text_offset": null,
           "category": "glass_cut",
-          "owner": "glass_top_right"
+          "owner": "glass_bottom_left"
         },
         {
           "type": "dimension",
@@ -992,7 +992,7 @@
           "angle": 90.0,
           "text_offset": null,
           "category": "glass_cut",
-          "owner": "glass_top_right"
+          "owner": "glass_bottom_left"
         }
       ],
       "center_handle": [

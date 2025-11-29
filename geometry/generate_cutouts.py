@@ -321,11 +321,17 @@ def generate_cutouts(params, frames, handles):
     if add_standard_glass_cutout:
         cutouts.append(Cutout(name="glass_cut", layer="CUT", points=pts_box))
     else:
-        # names depend on single/double
+        # names depend on single/double and number of panels
         if not is_double:
             names = ["glass_bottom", "glass_top"]
         else:
-            names = ["glass_bottom_right", "glass_top_right", "glass_bottom_left", "glass_top_left"]
+            # For double doors: Option4 has 2 panels (one per door), Option5 has 4 panels (two per door)
+            if len(glass_cutouts_to_add) == 2:
+                # Option4: one panel per door (right first, then left)
+                names = ["glass_bottom_right", "glass_bottom_left"]
+            else:
+                # Option5: two panels per door (right bottom, right top, left bottom, left top)
+                names = ["glass_bottom_right", "glass_top_right", "glass_bottom_left", "glass_top_left"]
         for i, poly in enumerate(glass_cutouts_to_add):
             name = names[i] if i < len(names) else f"glass_panel_{i+1}"
             cutouts.append(Cutout(name=name, layer="CUT", points=poly))

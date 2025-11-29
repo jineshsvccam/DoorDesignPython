@@ -24,8 +24,8 @@ BOX_HEIGHT = 112.0
 
 FIRE_GAP_LR = 190.0
 FIRE_GAP_TOP = 170.0
+FIRE_GAP_TOP_DOUBLE = 150.0
 FIRE_GAP_BOTTOM = 240.0
-
 
 # ===============================================================
 # 🧩 COMMON HELPER FUNCTIONS
@@ -120,8 +120,11 @@ def _validate_frame_dimensions(outer, inner, meta, door_width_meas, door_height_
     }
 
 
-def _validate_frame_gaps(outer, inner):
-    """Validate gaps between outer and inner frames."""
+def _validate_frame_gaps(outer, inner, bending_width_override=None):
+    """Validate gaps between outer and inner frames.
+    
+    For left door in double door setup, use BENDING_W_DOUBLE instead of BENDING_WIDTH.
+    """
     outer_left, outer_right, outer_bottom, outer_top = get_frame_bounds(outer)
     inner_left, inner_right, inner_bottom, inner_top = get_frame_bounds(inner)
     
@@ -130,9 +133,20 @@ def _validate_frame_gaps(outer, inner):
     left_gap = inner_left - outer_left
     right_gap = outer_right - inner_right
 
+    # Use override bending width for double doors left door, otherwise use default
+    bending_w = bending_width_override if bending_width_override is not None else BENDING_WIDTH
+    
     expected_top_gap = expected_bottom_gap = BENDING_HEIGHT - BEND_ADJUST
-    expected_left_gap = BENDING_WIDTH - BEND_ADJUST
-    expected_right_gap = BENDING_WIDTH - expected_left_gap
+    # For left door (with bending_w=43), left_gap should be BEND_ADJUST (12)
+    # For right door (with bending_w=31), left_gap should be bending_w - BEND_ADJUST (19)
+    if bending_width_override == BENDING_W_DOUBLE:
+        # Left door in double door setup
+        expected_left_gap = BEND_ADJUST
+        expected_right_gap = bending_w - BEND_ADJUST
+    else:
+        # Right door or single door
+        expected_left_gap = bending_w - BEND_ADJUST
+        expected_right_gap = BEND_ADJUST
 
     return {
         "top": round(top_gap, 2),
@@ -228,8 +242,11 @@ def _validate_handle(cutout_points, outer, inner, handle_name="center_handle", i
     }
 
 
-def _validate_fire_door_cutouts(cutouts, outer, inner, outer_h, option):
-    """Validate fire door specific cutouts (keybox and glass)."""
+def _validate_fire_door_cutouts(cutouts, outer, inner, outer_h, option, is_double_door=False):
+    """Validate fire door specific cutouts (keybox and glass).
+    
+    For double doors, use FIRE_GAP_TOP_DOUBLE (150) instead of FIRE_GAP_TOP (170).
+    """
     outer_left, outer_right, outer_bottom, outer_top = get_frame_bounds(outer)
     inner_left, inner_right, inner_bottom, inner_top = get_frame_bounds(inner)
     
@@ -273,18 +290,23 @@ def _validate_fire_door_cutouts(cutouts, outer, inner, outer_h, option):
         bottom_gap = bottom - outer_bottom
         outer_center_y = outer_h / 2
 
-        if option == "option1":
+        # Use different top gap for double doors
+        expected_top_gap = FIRE_GAP_TOP_DOUBLE if is_double_door else FIRE_GAP_TOP
+
+        if option == "option1" or option == "option4":
+            # Option1: Single door standard fire glass
+            # Option4: Double door standard fire glass (one panel per door)
             glass_ok = (
                 abs(left_gap - FIRE_GAP_LR) < 1
                 and abs(right_gap - FIRE_GAP_LR) < 1
-                and abs(top_gap - FIRE_GAP_TOP) < 1
+                and abs(top_gap - expected_top_gap) < 1
                 and abs(bottom_gap - FIRE_GAP_BOTTOM) < 1
             )
         elif option == "option2":
             glass_ok = (
                 abs(left_gap - FIRE_GAP_LR) < 1
                 and abs(right_gap - FIRE_GAP_LR) < 1
-                and abs(top_gap - FIRE_GAP_TOP) < 1
+                and abs(top_gap - expected_top_gap) < 1
                 and abs(bottom_gap - outer_center_y) < 1
             )
         elif option == "option3":
@@ -293,6 +315,15 @@ def _validate_fire_door_cutouts(cutouts, outer, inner, outer_h, option):
                 and abs(right_gap - FIRE_GAP_LR) < 1
                 and abs(bottom_gap - FIRE_GAP_BOTTOM) < 1
                 and abs(top_gap - outer_center_y) < 1
+            )
+        elif option == "option5":
+            # Option5: Four glass panels (two per door, split top and bottom)
+            # Each panel has LR margins of 190, and one fixed margin (240) on either top or bottom
+            # The other margin is variable (center split area)
+            glass_ok = (
+                abs(left_gap - FIRE_GAP_LR) < 1
+                and abs(right_gap - FIRE_GAP_LR) < 1
+                and (abs(top_gap - FIRE_GAP_BOTTOM) < 1 or abs(bottom_gap - FIRE_GAP_BOTTOM) < 1)
             )
         else:
             glass_ok = False
@@ -428,7 +459,7 @@ def validate_double_door(data: Dict[str, Any]) -> Dict[str, Any]:
             left_outer, left_inner, meta, inner_width_per_door, height_meas,
             bending_width_override=BENDING_W_DOUBLE, is_double_door=True
         )
-        results["left_door"]["frame_gaps"] = _validate_frame_gaps(left_outer, left_inner)
+        results["left_door"]["frame_gaps"] = _validate_frame_gaps(left_outer, left_inner, bending_width_override=BENDING_W_DOUBLE)
         
         # Left handle validation - left_handle is always for left door
         if "left_handle" in cutouts:
@@ -470,8 +501,9 @@ def validate_double_door(data: Dict[str, Any]) -> Dict[str, Any]:
             results["glass_cut_valid"] = False
         
         # Validate glass cuts for both doors if they exist
-        left_glass_names = [name for name in cutout_names if "left" in name and "glass" in name]
-        right_glass_names = [name for name in cutout_names if "right" in name and "glass" in name]
+        # Check for glass names containing "_left" or "_right" to properly assign to doors
+        left_glass_names = [name for name in cutout_names if "glass" in name and "_left" in name]
+        right_glass_names = [name for name in cutout_names if "glass" in name and "_right" in name]
         
         # Validate left door glass if exists
         if left_glass_names and left_outer and left_inner:
@@ -484,7 +516,7 @@ def validate_double_door(data: Dict[str, Any]) -> Dict[str, Any]:
                         temp_cutouts["keybox"] = cutouts["keybox"]
                     
                     fire_results = _validate_fire_door_cutouts(
-                        temp_cutouts, left_outer, left_inner, left_outer_h, option
+                        temp_cutouts, left_outer, left_inner, left_outer_h, option, is_double_door=True
                     )
                     if "left_door" not in results:
                         results["left_door"] = {}
@@ -501,7 +533,7 @@ def validate_double_door(data: Dict[str, Any]) -> Dict[str, Any]:
                         temp_cutouts["keybox"] = cutouts["keybox"]
                     
                     fire_results = _validate_fire_door_cutouts(
-                        temp_cutouts, right_outer, right_inner, right_outer_h, option
+                        temp_cutouts, right_outer, right_inner, right_outer_h, option, is_double_door=True
                     )
                     if "right_door" not in results:
                         results["right_door"] = {}

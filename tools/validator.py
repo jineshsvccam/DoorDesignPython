@@ -1,31 +1,38 @@
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
+# Add parent directory to path so we can import fastapi_app
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# ===============================================================
-# 🔧 GLOBAL CONFIGURATION / CONSTANTS
-# ===============================================================
-BENDING_WIDTH = 31.0
-BENDING_HEIGHT = 24.0
-BEND_ADJUST = 12.0
-DOUBLE_DOOR_GAP = 3.0
-DOOR_MINUS_W = 68.0
-DOOR_MINUS_H = 70.0
-BENDING_W_DOUBLE = 43.0
+# Import default values from schemas to avoid duplication
+from fastapi_app.schemas_input import DefaultInfo
 
-KEYBOX_W = 70.0
-KEYBOX_H = 40.0
-KEYBOX_BOTTOM_OFFSET = 50.0
+# Create a default instance to use as fallback values
+_DEFAULTS = DefaultInfo()
 
-BOX_GAP = 30.0
-BOX_WIDTH = 25.0
-BOX_HEIGHT = 112.0
+# Expose constants for backward compatibility and easy access
+BENDING_WIDTH = _DEFAULTS.bending_width
+BENDING_HEIGHT = _DEFAULTS.bending_height
+BEND_ADJUST = _DEFAULTS.bend_adjust
+DOUBLE_DOOR_GAP = _DEFAULTS.double_door_gap
+DOOR_MINUS_W = _DEFAULTS.door_minus_measurement_width
+DOOR_MINUS_H = _DEFAULTS.door_minus_measurement_height
+BENDING_W_DOUBLE = _DEFAULTS.bending_width_double_door
 
-FIRE_GAP_LR = 190.0
-FIRE_GAP_TOP = 170.0
-FIRE_GAP_TOP_DOUBLE = 150.0
-FIRE_GAP_BOTTOM = 240.0
+KEYBOX_W = _DEFAULTS.keybox_width
+KEYBOX_H = _DEFAULTS.keybox_height
+KEYBOX_BOTTOM_OFFSET = _DEFAULTS.keybox_bottom_offset
+
+BOX_GAP = _DEFAULTS.box_gap
+BOX_WIDTH = _DEFAULTS.box_width
+BOX_HEIGHT = _DEFAULTS.box_height
+
+FIRE_GAP_LR = _DEFAULTS.fire_glass_lr_margin
+FIRE_GAP_TOP = _DEFAULTS.fire_glass_top_margin
+FIRE_GAP_TOP_DOUBLE = _DEFAULTS.fire_glass_top_margin_double
+FIRE_GAP_BOTTOM = _DEFAULTS.fire_glass_bottom_margin
 
 # ===============================================================
 # 🧩 COMMON HELPER FUNCTIONS

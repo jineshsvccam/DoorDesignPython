@@ -13,7 +13,15 @@
       0.0,
       0.0
     ],
-    "hole_offset": "150x40"
+    "hole_offset": "150x40",
+    "dimensions": {
+      "width_measurement": 600.0,
+      "height_measurement": 1105.0,
+      "left_side_allowance_width": 25.0,
+      "right_side_allowance_width": 25.0,
+      "top_side_allowance_height": 25.0,
+      "bottom_side_allowance_height": 0.0
+    }
   },
   "geometry": {
     "frames": [

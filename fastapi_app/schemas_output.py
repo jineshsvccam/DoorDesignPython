@@ -13,6 +13,7 @@ class Metadata(BaseModel):
     is_annotation_required: bool = True
     offset: Tuple[float, float] = (0.0, 0.0)
     hole_offset: str = ""
+    dimensions: Optional[Dict[str, float]] = None
 
 
 class Frame(BaseModel):

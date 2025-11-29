@@ -142,6 +142,10 @@ def create_metadata(request, frames, offset, rotated):
     left_outer_pts = frames.get("left_outer") or []
     all_pts = outer_pts + left_outer_pts
     w, h = compute_frame_dimensions(all_pts) if all_pts else (0.0, frames.get("outer_height", 0.0))
+    
+   
+    dimensions_info = request.dimensions.dict() if hasattr(request, 'dimensions') and request.dimensions else None
+    
     return Metadata(
         label=request.metadata.label,
         file_name=request.metadata.file_name,
@@ -150,7 +154,8 @@ def create_metadata(request, frames, offset, rotated):
         rotated=rotated,
         is_annotation_required=True,
         offset=offset,
-        hole_offset=request.door.hole_offset
+        hole_offset=request.door.hole_offset,
+        dimensions=dimensions_info
     )
 
 

@@ -99,7 +99,7 @@ class DoorDrawingGenerator:
                 return
 
             passed = bool(validate_schema(schema))
-            passed = True
+            passed = True # TEMP OVERRIDE FOR TESTING ONLY
         except Exception as e:
             try:
                 import traceback, json

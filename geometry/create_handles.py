@@ -24,7 +24,11 @@ def create_handles(params, frames):
 
     left_handle_pts = []
     if is_double:
-        left_handle_left_x = inner_offset_x - shift_left + leaf_width - handle_gap - handle_width
+        # For left door, use left-specific inner offset
+        inner_offset_x_left = frames.get("inner_offset_left", (inner_offset_x, inner_offset_y))[0]
+        # Right edge of left_inner is at: inner_offset_x_left - shift_left + leaf_width
+        # Handle's right edge should be handle_gap away from that
+        left_handle_left_x = inner_offset_x_left - shift_left + leaf_width - handle_gap - handle_width
         left_handle_pts = [
             (left_handle_left_x, handle_bottom_y),
             (left_handle_left_x + handle_width, handle_bottom_y),

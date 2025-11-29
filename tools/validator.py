@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any, Dict
 
 
 # ===============================================================
@@ -9,6 +10,9 @@ BENDING_WIDTH = 31.0
 BENDING_HEIGHT = 24.0
 BEND_ADJUST = 12.0
 DOUBLE_DOOR_GAP = 3.0
+DOOR_MINUS_W = 68.0
+DOOR_MINUS_H = 70.0
+BENDING_W_DOUBLE = 43.0
 
 KEYBOX_W = 70.0
 KEYBOX_H = 40.0
@@ -63,36 +67,64 @@ def _collect_valid_flags(obj):
 # ===============================================================
 # 🧱 SINGLE DOOR VALIDATION
 # ===============================================================
-def validate_single_door(data):
-    """Handles both normal and fire single door validation."""
-    door_type = data.get("door_type", "")
-    door_cat = data.get("door_category", "")
-    option = str(data.get("option", "")).lower()
-
-    if door_cat != "Single":
-        return {"is_single_door": False}
-
-    results = {}
-
-    # --- Parse metadata and frames ---
-    # NOTE: callers (for example `validate_schema`) are expected to
-    # normalize rotated inputs by calling `adjust_for_rotation` once
-    # before invoking this validator. This function assumes the
-    # coordinate system is already non-rotated (Y is vertical).
-    meta = data["metadata"]
-    meta_w, meta_h = meta["width"], meta["height"]
-
-    frames = data["geometry"]["frames"]
-    outer = next(f for f in frames if f["name"] == "outer")
-    inner = next(f for f in frames if f["name"] == "inner")
-
+def _validate_frame_dimensions(outer, inner, meta, door_width_meas, door_height_meas, bending_width_override=None, is_double_door=False):
+    """Validate frame dimensions for a single door (or one side of double door)."""
     outer_w, outer_h = get_dimensions(outer)
     inner_w, inner_h = get_dimensions(inner)
+    
+    dims = meta.get("dimensions", {})
+    left_allow = dims.get("left_side_allowance_width", 0)
+    right_allow = dims.get("right_side_allowance_width", 0)
+    top_allow = dims.get("top_side_allowance_height", 0)
+    bottom_allow = dims.get("bottom_side_allowance_height", 0)
 
+    # Use override bending width for double doors, otherwise use default
+    bending_w = bending_width_override if bending_width_override is not None else BENDING_WIDTH
+    
+    # For double doors, door_width_meas is already the inner width per door
+    # For single doors, we need to calculate it
+    if is_double_door:
+        expected_inner_w = door_width_meas
+        expected_outer_w = expected_inner_w + bending_w
+    else:
+        expected_outer_w = door_width_meas + left_allow + right_allow - DOOR_MINUS_W + BENDING_WIDTH
+        expected_inner_w = expected_outer_w - BENDING_WIDTH
+
+    # Height calculation is same for both
+    expected_outer_h = door_height_meas + top_allow + bottom_allow - DOOR_MINUS_H + BENDING_HEIGHT
+    expected_inner_h = expected_outer_h - BENDING_HEIGHT
+
+    return {
+        "outer_frame": {
+            "actual_width": round(outer_w, 2),
+            "actual_height": round(outer_h, 2),
+            "expected_width": round(expected_outer_w, 2),
+            "expected_height": round(expected_inner_h, 2),
+            "width_valid": abs(outer_w - expected_outer_w) < 0.5,
+            "height_valid": abs(outer_h - expected_inner_h) < 0.5,
+        },
+        "inner_frame": {
+            "actual_width": round(inner_w, 2),
+            "actual_height": round(inner_h, 2),
+            "expected_width": round(expected_inner_w, 2),
+            "expected_height": round(expected_outer_h, 2),
+            "width_valid": abs(inner_w - expected_inner_w) < 0.5,
+            "height_valid": abs(inner_h - expected_outer_h) < 0.5,
+        },
+        "is_valid": (
+            abs(outer_w - expected_outer_w) < 0.5
+            and abs(outer_h - expected_inner_h) < 0.5
+            and abs(inner_w - expected_inner_w) < 0.5
+            and abs(inner_h - expected_outer_h) < 0.5
+        ),
+    }
+
+
+def _validate_frame_gaps(outer, inner):
+    """Validate gaps between outer and inner frames."""
     outer_left, outer_right, outer_bottom, outer_top = get_frame_bounds(outer)
     inner_left, inner_right, inner_bottom, inner_top = get_frame_bounds(inner)
-
-    # --- Frame validation ---
+    
     top_gap = inner_top - outer_top
     bottom_gap = outer_bottom - inner_bottom
     left_gap = inner_left - outer_left
@@ -102,27 +134,32 @@ def validate_single_door(data):
     expected_left_gap = BENDING_WIDTH - BEND_ADJUST
     expected_right_gap = BENDING_WIDTH - expected_left_gap
 
-    results["frame_gaps"] = dict(
-        top=round(top_gap, 2),
-        bottom=round(bottom_gap, 2),
-        left=round(left_gap, 2),
-        right=round(right_gap, 2),
-        valid=(
+    return {
+        "top": round(top_gap, 2),
+        "bottom": round(bottom_gap, 2),
+        "left": round(left_gap, 2),
+        "right": round(right_gap, 2),
+        "valid": (
             abs(top_gap - expected_top_gap) < 0.5
             and abs(bottom_gap - expected_bottom_gap) < 0.5
             and abs(left_gap - expected_left_gap) < 0.5
             and abs(right_gap - expected_right_gap) < 0.5
         ),
-    )
+    }
 
-    # --- Keyholes (position-based to handle rotation swaps) ---
-    holes_list = data["geometry"].get("holes", [])
+
+def _validate_holes(holes_list, outer, inner, meta):
+    """Validate keyhole positions."""
+    outer_left, outer_right, outer_bottom, outer_top = get_frame_bounds(outer)
+    inner_left, inner_right, inner_bottom, inner_top = get_frame_bounds(inner)
+    
     hole_offset_str = meta.get("hole_offset", "150x40")
     top_bottom_offset, left_offset = map(float, hole_offset_str.lower().split("x"))
 
     # sort holes by Y (top first)
     holes_sorted = sorted(holes_list, key=lambda h: h["center"][1], reverse=True)
 
+    results = {}
     for idx, h in enumerate(holes_sorted):
         name = h["name"]
         x, y = h["center"]
@@ -149,108 +186,179 @@ def validate_single_door(data):
             "vertical": round(vertical_offset, 2),
             "is_valid": valid,
         }
+    
+    return results
+
+
+def _validate_handle(cutout_points, outer, inner, handle_name="center_handle", is_left_door=False):
+    """Validate handle cutout dimensions and position.
+    
+    For left door handles, measure gap from right edge of inner frame.
+    For right door handles, measure gap from left edge of inner frame.
+    """
+    outer_left, outer_right, outer_bottom, outer_top = get_frame_bounds(outer)
+    inner_left, inner_right, inner_bottom, inner_top = get_frame_bounds(inner)
+    
+    xs = [p[0] for p in cutout_points]
+    ys = [p[1] for p in cutout_points]
+    left, right, bottom, top = min(xs), max(xs), min(ys), max(ys)
+    width, height = right - left, top - bottom
+    top_gap = outer_top - top
+    bottom_gap = bottom - outer_bottom
+    centered = abs(top_gap - bottom_gap) < 0.5
+    
+    # For left door, measure from right edge of inner frame (handle is on right side)
+    # For right door (or single door), measure from left edge of inner frame
+    if is_left_door:
+        left_gap = inner_right - right  # distance from inner_right edge to handle's right edge
+    else:
+        left_gap = left - inner_left  # distance from inner_left edge to handle's left edge
+
+    return {
+        "left_gap": round(left_gap, 2),
+        "width": round(width, 2),
+        "height": round(height, 2),
+        "centered": centered,
+        "is_valid": (
+            abs(left_gap - BOX_GAP) < 0.5
+            and abs(width - BOX_WIDTH) < 0.5
+            and abs(height - BOX_HEIGHT) < 0.5
+            and centered
+        ),
+    }
+
+
+def _validate_fire_door_cutouts(cutouts, outer, inner, outer_h, option):
+    """Validate fire door specific cutouts (keybox and glass)."""
+    outer_left, outer_right, outer_bottom, outer_top = get_frame_bounds(outer)
+    inner_left, inner_right, inner_bottom, inner_top = get_frame_bounds(inner)
+    
+    results = {}
+    required = {"glass_cut", "keybox"}
+    results["cutout_count_ok"] = required.issubset(cutouts.keys())
+
+    # 🔹 Keybox check
+    if "keybox" in cutouts:
+        pts = cutouts["keybox"]
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        left, right, bottom, top = min(xs), max(xs), min(ys), max(ys)
+        left_gap, right_gap = left - inner_left, inner_right - right
+        bottom_gap = bottom - outer_bottom
+        centered_lr = abs(left_gap - right_gap) < 0.5
+
+        results["keybox"] = {
+            "width": right - left,
+            "height": top - bottom,
+            "bottom_gap": bottom_gap,
+            "centered_lr": centered_lr,
+            "is_valid": (
+                abs(right - left - KEYBOX_W) < 0.5
+                and abs(top - bottom - KEYBOX_H) < 0.5
+                and abs(bottom_gap - KEYBOX_BOTTOM_OFFSET) < 0.5
+                and centered_lr
+            ),
+        }
+
+    # 🔹 Glass cut validation
+    if "glass_cut" in cutouts:
+        pts = cutouts["glass_cut"]
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        left, right, bottom, top = min(xs), max(xs), min(ys), max(ys)
+
+        left_gap = left - inner_left
+        right_gap = inner_right - right
+        top_gap = outer_top - top
+        bottom_gap = bottom - outer_bottom
+        outer_center_y = outer_h / 2
+
+        if option == "option1":
+            glass_ok = (
+                abs(left_gap - FIRE_GAP_LR) < 1
+                and abs(right_gap - FIRE_GAP_LR) < 1
+                and abs(top_gap - FIRE_GAP_TOP) < 1
+                and abs(bottom_gap - FIRE_GAP_BOTTOM) < 1
+            )
+        elif option == "option2":
+            glass_ok = (
+                abs(left_gap - FIRE_GAP_LR) < 1
+                and abs(right_gap - FIRE_GAP_LR) < 1
+                and abs(top_gap - FIRE_GAP_TOP) < 1
+                and abs(bottom_gap - outer_center_y) < 1
+            )
+        elif option == "option3":
+            glass_ok = (
+                abs(left_gap - FIRE_GAP_LR) < 1
+                and abs(right_gap - FIRE_GAP_LR) < 1
+                and abs(bottom_gap - FIRE_GAP_BOTTOM) < 1
+                and abs(top_gap - outer_center_y) < 1
+            )
+        else:
+            glass_ok = False
+
+        results["glass_cut"] = {
+            "left_gap": left_gap,
+            "right_gap": right_gap,
+            "top_gap": top_gap,
+            "bottom_gap": bottom_gap,
+            "is_valid": glass_ok,
+        }
+    
+    return results
+
+
+def validate_single_door(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Handles both normal and fire single door validation."""
+    door_type = data.get("door_type", "")
+    door_cat = data.get("door_category", "")
+    option = str(data.get("option", "")).lower()
+
+    if door_cat != "Single":
+        return {"is_single_door": False}
+
+    results: Dict[str, Any] = {}
+
+    # --- Parse metadata and frames ---
+    # NOTE: callers (for example `validate_schema`) are expected to
+    # normalize rotated inputs by calling `adjust_for_rotation` once
+    # before invoking this validator. This function assumes the
+    # coordinate system is already non-rotated (Y is vertical).
+    meta = data["metadata"]
+    frames = data["geometry"]["frames"]
+    outer = next(f for f in frames if f["name"] == "outer")
+    inner = next(f for f in frames if f["name"] == "inner")
+
+    outer_w, outer_h = get_dimensions(outer)
+    inner_w, inner_h = get_dimensions(inner)
+
+    outer_left, outer_right, outer_bottom, outer_top = get_frame_bounds(outer)
+    inner_left, inner_right, inner_bottom, inner_top = get_frame_bounds(inner)
+
+    # --- Frame dimensions validation ---
+    dims = meta.get("dimensions", {})
+    width_meas = dims.get("width_measurement", 0)
+    height_meas = dims.get("height_measurement", 0)
+    
+    results["frame_dimensions"] = _validate_frame_dimensions(outer, inner, meta, width_meas, height_meas)
+
+    # --- Frame gaps validation ---
+    results["frame_gaps"] = _validate_frame_gaps(outer, inner)
+
+    # --- Keyholes (position-based to handle rotation swaps) ---
+    holes_list = data["geometry"].get("holes", [])
+    hole_results = _validate_holes(holes_list, outer, inner, meta)
+    results.update(hole_results)
 
     # --- Center handle cutout ---
     cutouts = {c["name"]: c["points"] for c in data["geometry"]["cutouts"]}
     if "center_handle" in cutouts:
-        pts = cutouts["center_handle"]
-        xs = [p[0] for p in pts]
-        ys = [p[1] for p in pts]
-        left, right, bottom, top = min(xs), max(xs), min(ys), max(ys)
-        width, height = right - left, top - bottom
-        top_gap = outer_top - top
-        bottom_gap = bottom - outer_bottom
-        centered = abs(top_gap - bottom_gap) < 0.5
-        left_gap = left - inner_left
-
-        results["center_handle"] = {
-            "left_gap": round(left_gap, 2),
-            "width": round(width, 2),
-            "height": round(height, 2),
-            "centered": centered,
-            "is_valid": (
-                abs(left_gap - BOX_GAP) < 0.5
-                and abs(width - BOX_WIDTH) < 0.5
-                and abs(height - BOX_HEIGHT) < 0.5
-                and centered
-            ),
-        }
+        results["center_handle"] = _validate_handle(cutouts["center_handle"], outer, inner)
 
     # --- Fire door special validations ---
     if door_type == "Fire":
-        cutouts = {c["name"]: c["points"] for c in data["geometry"]["cutouts"]}
-        required = {"glass_cut", "keybox"}
-        results["cutout_count_ok"] = required.issubset(cutouts.keys())
-
-        # 🔹 Keybox check
-        if "keybox" in cutouts:
-            pts = cutouts["keybox"]
-            xs = [p[0] for p in pts]
-            ys = [p[1] for p in pts]
-            left, right, bottom, top = min(xs), max(xs), min(ys), max(ys)
-            left_gap, right_gap = left - inner_left, inner_right - right
-            bottom_gap = bottom - outer_bottom
-            centered_lr = abs(left_gap - right_gap) < 0.5
-
-            results["keybox"] = {
-                "width": right - left,
-                "height": top - bottom,
-                "bottom_gap": bottom_gap,
-                "centered_lr": centered_lr,
-                "is_valid": (
-                    abs(right - left - KEYBOX_W) < 0.5
-                    and abs(top - bottom - KEYBOX_H) < 0.5
-                    and abs(bottom_gap - KEYBOX_BOTTOM_OFFSET) < 0.5
-                    and centered_lr
-                ),
-            }
-
-        # 🔹 Glass cut validation
-        if "glass_cut" in cutouts:
-            pts = cutouts["glass_cut"]
-            xs = [p[0] for p in pts]
-            ys = [p[1] for p in pts]
-            left, right, bottom, top = min(xs), max(xs), min(ys), max(ys)
-
-            left_gap = left - inner_left
-            right_gap = inner_right - right
-            top_gap = outer_top - top
-            bottom_gap = bottom - outer_bottom
-            center_y = (top + bottom) / 2
-            outer_center_y = outer_h / 2
-
-
-            if option == "option1":
-                glass_ok = (
-                    abs(left_gap - FIRE_GAP_LR) < 1
-                    and abs(right_gap - FIRE_GAP_LR) < 1
-                    and abs(top_gap - FIRE_GAP_TOP) < 1
-                    and abs(bottom_gap - FIRE_GAP_BOTTOM) < 1
-                )
-            elif option == "option2":
-                glass_ok = (
-                    abs(left_gap - FIRE_GAP_LR) < 1
-                    and abs(right_gap - FIRE_GAP_LR) < 1
-                    and abs(top_gap - FIRE_GAP_TOP) < 1
-                    and abs(bottom_gap - outer_center_y) < 1
-                )
-            elif option == "option3":
-                glass_ok = (
-                    abs(left_gap - FIRE_GAP_LR) < 1
-                    and abs(right_gap - FIRE_GAP_LR) < 1
-                    and abs(bottom_gap - FIRE_GAP_BOTTOM) < 1
-                    and abs(top_gap - outer_center_y) < 1
-                )
-            else:
-                glass_ok = False
-
-            results["glass_cut"] = {
-                "left_gap": left_gap,
-                "right_gap": right_gap,
-                "top_gap": top_gap,
-                "bottom_gap": bottom_gap,
-                "is_valid": glass_ok,
-            }
+        fire_results = _validate_fire_door_cutouts(cutouts, outer, inner, outer_h, option)
+        results.update(fire_results)
 
     results["is_single_door"] = True
     return results
@@ -259,52 +367,145 @@ def validate_single_door(data):
 # ===============================================================
 # 🚪 DOUBLE DOOR VALIDATION
 # ===============================================================
-def validate_double_door(data):
+def validate_double_door(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate double door with detailed checks for both left and right doors."""
     if data.get("door_category") != "Double":
         return {"is_double_door": False}
 
-    results = {"door_category": "Double", "is_valid": True}
-
+    door_type = data.get("door_type", "")
+    option = str(data.get("option", "")).lower()
+    
+    results: Dict[str, Any] = {"door_category": "Double"}
+    
+    meta = data["metadata"]
     geometry = data["geometry"]
     frames = geometry.get("frames", [])
-    cutouts = geometry.get("cutouts", [])
+    cutouts_list = geometry.get("cutouts", [])
     holes = geometry.get("holes", [])
-    cutout_names = {c["name"] for c in cutouts}
+    cutouts = {c["name"]: c["points"] for c in cutouts_list}
+    cutout_names = set(cutouts.keys())
 
-    # 1️⃣ 4 frame check
+    # 1️⃣ Frame count check
     results["frame_count_ok"] = len(frames) == 4
     if not results["frame_count_ok"]:
         results["is_valid"] = False
+        results["is_double_door"] = True
+        return results
 
-    # 2️⃣ gap between left and right door
+    # Get all frames
     left_outer = next((f for f in frames if f["name"] == "left_outer"), None)
+    left_inner = next((f for f in frames if f["name"] == "left_inner"), None)
     right_outer = next((f for f in frames if f["name"] == "outer"), None)
+    right_inner = next((f for f in frames if f["name"] == "inner"), None)
+
+    # 2️⃣ Gap between left and right door
     if left_outer and right_outer:
         left_right_gap = right_outer["points"][0][0] - left_outer["points"][1][0]
-        results["double_door_gap_ok"] = abs(left_right_gap - DOUBLE_DOOR_GAP) < 0.5
+        results["double_door_gap"] = {
+            "actual": round(left_right_gap, 2),
+            "expected": DOUBLE_DOOR_GAP,
+            "is_valid": abs(left_right_gap - DOUBLE_DOOR_GAP) < 0.5,
+        }
     else:
-        results["double_door_gap_ok"] = False
+        results["double_door_gap"] = {"is_valid": False}
 
-    # 3️⃣ keyhole/keybox on right door only
-    hole_positions = [h["center"][0] for h in holes]
-    if hole_positions and right_outer:
-        avg_hole_x = sum(hole_positions) / len(hole_positions)
-        right_center = right_outer["points"][0][0] + (right_outer["width"] / 2)
-        results["keyhole_on_right_door"] = avg_hole_x > right_center - 100
+    # 3️⃣ Calculate door widths for double door
+    dims = meta.get("dimensions", {})
+    total_width_meas = dims.get("width_measurement", 0)
+    height_meas = dims.get("height_measurement", 0)
+    left_allow = dims.get("left_side_allowance_width", 0)
+    right_allow = dims.get("right_side_allowance_width", 0)
+    
+    # Formula: (1240 + 25 + 25) / 2 = 645, then 645 - (68+3)/2 = 645 - 35.5 = 609.5
+    half_width_with_allowances = (total_width_meas + left_allow + right_allow) / 2
+    half_door_minus = (DOOR_MINUS_W + DOUBLE_DOOR_GAP) / 2
+    inner_width_per_door = half_width_with_allowances - half_door_minus
 
-    # 4️⃣ both handles should exist
+    # 4️⃣ Validate LEFT DOOR frames (uses BENDING_W_DOUBLE = 43.0)
+    if left_outer and left_inner:
+        results["left_door"] = {}
+        results["left_door"]["frame_dimensions"] = _validate_frame_dimensions(
+            left_outer, left_inner, meta, inner_width_per_door, height_meas,
+            bending_width_override=BENDING_W_DOUBLE, is_double_door=True
+        )
+        results["left_door"]["frame_gaps"] = _validate_frame_gaps(left_outer, left_inner)
+        
+        # Left handle validation - left_handle is always for left door
+        if "left_handle" in cutouts:
+            results["left_door"]["left_handle"] = _validate_handle(
+                cutouts["left_handle"], left_outer, left_inner, "left_handle", is_left_door=True
+            )
+
+    # 5️⃣ Validate RIGHT DOOR frames (uses BENDING_WIDTH = 31.0)
+    if right_outer and right_inner:
+        results["right_door"] = {}
+        results["right_door"]["frame_dimensions"] = _validate_frame_dimensions(
+            right_outer, right_inner, meta, inner_width_per_door, height_meas,
+            bending_width_override=BENDING_WIDTH, is_double_door=True
+        )
+        results["right_door"]["frame_gaps"] = _validate_frame_gaps(right_outer, right_inner)
+        
+        # Holes validation (on right door only)
+        if holes:
+            hole_results = _validate_holes(holes, right_outer, right_inner, meta)
+            results["right_door"].update(hole_results)
+        
+        # Center handle validation - center_handle is always for right door
+        if "center_handle" in cutouts:
+            results["right_door"]["right_handle"] = _validate_handle(
+                cutouts["center_handle"], right_outer, right_inner, "right_handle", is_left_door=False
+            )
+
+    # 6️⃣ Both handles should exist
     results["handles_ok"] = "left_handle" in cutout_names and "center_handle" in cutout_names
 
-    # 5️⃣ fire double door glass validation
-    if data.get("door_type") == "Fire":
-        option = str(data.get("option", "")).lower()
-        glass_cuts = [c for c in cutouts if "glass" in c["name"]]
+    # 7️⃣ Fire double door glass validation
+    if door_type == "Fire":
+        glass_cuts = [c for c in cutouts_list if "glass" in c["name"]]
         if option == "option4":
             results["glass_cut_valid"] = len(glass_cuts) == 2
         elif option == "option5":
             results["glass_cut_valid"] = len(glass_cuts) == 4
         else:
             results["glass_cut_valid"] = False
+        
+        # Validate glass cuts for both doors if they exist
+        left_glass_names = [name for name in cutout_names if "left" in name and "glass" in name]
+        right_glass_names = [name for name in cutout_names if "right" in name and "glass" in name]
+        
+        # Validate left door glass if exists
+        if left_glass_names and left_outer and left_inner:
+            left_outer_h = get_dimensions(left_outer)[1]
+            for glass_name in left_glass_names:
+                if glass_name in cutouts:
+                    # Create a temporary cutouts dict for fire validation
+                    temp_cutouts = {"glass_cut": cutouts[glass_name]}
+                    if "keybox" in cutouts:
+                        temp_cutouts["keybox"] = cutouts["keybox"]
+                    
+                    fire_results = _validate_fire_door_cutouts(
+                        temp_cutouts, left_outer, left_inner, left_outer_h, option
+                    )
+                    if "left_door" not in results:
+                        results["left_door"] = {}
+                    results["left_door"][glass_name] = fire_results.get("glass_cut", {})
+        
+        # Validate right door glass if exists
+        if right_glass_names and right_outer and right_inner:
+            right_outer_h = get_dimensions(right_outer)[1]
+            for glass_name in right_glass_names:
+                if glass_name in cutouts:
+                    # Create a temporary cutouts dict for fire validation
+                    temp_cutouts = {"glass_cut": cutouts[glass_name]}
+                    if "keybox" in cutouts:
+                        temp_cutouts["keybox"] = cutouts["keybox"]
+                    
+                    fire_results = _validate_fire_door_cutouts(
+                        temp_cutouts, right_outer, right_inner, right_outer_h, option
+                    )
+                    if "right_door" not in results:
+                        results["right_door"] = {}
+                    results["right_door"][glass_name] = fire_results.get("glass_cut", {})
 
     results["is_double_door"] = True
     return results
@@ -394,12 +595,9 @@ def validate_schema(schema) -> bool:
 
 
 def validate_geometry_auto(json_path: str):
+    """Load and validate a door geometry JSON file."""
     data = json.loads(Path(json_path).read_text())
-
-    if data.get("door_category") == "Double":
-        return validate_double_door(data)
-    else:
-        return validate_single_door(data)
+    return validate_double_door(data) if data.get("door_category") == "Double" else validate_single_door(data)
 
 
 # ===============================================================
@@ -431,18 +629,14 @@ if __name__ == "__main__":
             result = validate_geometry_auto(str(file_path))
             for k, v in result.items():
                 print(f"{k}: {v}")
-            # evaluate pass/fail: collect any 'is_valid'/'valid' flags and
-            # consider the file passing only if all such flags are True.
+            
+            # Evaluate pass/fail by collecting 'is_valid'/'valid' flags
             flags = _collect_valid_flags(result)
             if flags:
                 passed = all(flags)
             else:
-                # fallback: if there is an explicit top-level is_single_door /
-                # is_double_door field use that; otherwise treat as fail.
-                if result.get("is_single_door") is True or result.get("is_double_door") is True:
-                    passed = True
-                else:
-                    passed = False
+                # Fallback: check top-level door type indicators
+                passed = result.get("is_single_door") is True or result.get("is_double_door") is True
 
             status = "pass" if passed else "fail"
 

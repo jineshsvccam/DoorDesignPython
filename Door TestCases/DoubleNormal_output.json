@@ -6,7 +6,7 @@
     "label": "DoubleNormal",
     "file_name": "DoubleNormal.dxf",
     "width": 1296.0,
-    "height": 1594.0,
+    "height": 1570.0,
     "rotated": false,
     "is_annotation_required": true,
     "offset": [
@@ -726,7 +726,7 @@
         "text": "DoubleNormal",
         "position": [
           1246.0,
-          797.0
+          785.0
         ],
         "align": "MIDDLE_RIGHT",
         "height": 8.0,

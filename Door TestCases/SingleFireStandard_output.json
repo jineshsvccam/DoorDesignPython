@@ -6,7 +6,7 @@
     "label": "SingleFireStandard",
     "file_name": "SingleFireStandard.dxf",
     "width": 613.0,
-    "height": 1084.0,
+    "height": 1060.0,
     "rotated": false,
     "is_annotation_required": true,
     "offset": [
@@ -843,7 +843,7 @@
         "text": "SingleFireStandard",
         "position": [
           563.0,
-          542.0
+          530.0
         ],
         "align": "MIDDLE_RIGHT",
         "height": 8.0,

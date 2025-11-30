@@ -6,7 +6,7 @@
     "label": "DoubleFourGlass",
     "file_name": "DoubleFourGlass.dxf",
     "width": 1296.0,
-    "height": 1619.0,
+    "height": 1595.0,
     "rotated": false,
     "is_annotation_required": true,
     "offset": [
@@ -1863,7 +1863,7 @@
         "text": "DoubleFourGlass",
         "position": [
           1246.0,
-          809.5
+          797.5
         ],
         "align": "MIDDLE_RIGHT",
         "height": 8.0,

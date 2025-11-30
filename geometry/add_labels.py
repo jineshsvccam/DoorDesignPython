@@ -11,7 +11,7 @@ def create_labels(request,metadata) -> List[Label]:
     labels: List[Label] = []
 
     # metadata values used for computing placement coordinates
-    offs = getattr(metadata, "offset", (0.0, 0.0)) or (0.0, 0.0)
+    # Note: Do NOT include offset here - it will be applied by transform_point_func when drawing
     width = float(getattr(metadata, "width", 0.0) or 0.0)
     height = float(getattr(metadata, "height", 0.0) or 0.0)
 
@@ -22,11 +22,12 @@ def create_labels(request,metadata) -> List[Label]:
     # center label: originally centered; place at right border and rotate if you prefer
     text = getattr(metadata, "label", "") or getattr(metadata, "file_name", "")
     if text:
+        # Use local coordinates (without offset) - transform will be applied when drawing
         # keep the centered coordinates available if you need them later
-        center_pos = (offs[0] + width / 2.0, offs[1] + height / 2.0)
+        center_pos = (width / 2.0, height / 2.0)
         # place near the right border and vertically centered
-    # leave a 50 mm gap from the right border to avoid overlap with frame
-        right_pos = (offs[0] + max(width - 50.0, 10.0), offs[1] + height / 2.0)
+        # leave a 50 mm gap from the right border to avoid overlap with frame
+        right_pos = (max(width - 50.0, 10.0), height / 2.0)
         labels.append(
             Label(
                 type="center_label",
@@ -43,10 +44,11 @@ def create_labels(request,metadata) -> List[Label]:
             )
         )
 
-    # corner label (file name) at top-left by default (explicit coordinates)
+    # corner label (file name) at top-left by default (explicit coordinates, local coordinate system)
     file_name = getattr(request.metadata, "file_name", "")
     if file_name and file_name != text:
-        top_left = (offs[0] + 10.0, offs[1] + max(height - 10.0, 10.0))
+        # Use local coordinates (without offset) - transform will be applied when drawing
+        top_left = (10.0, max(height - 10.0, 10.0))
         # labels.append(
         #     Label(
         #         type="corner_label",

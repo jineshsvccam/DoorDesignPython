@@ -43,22 +43,43 @@ def validate_transformed_folder(folder_path: str):
                     continue
 
                 try:
-                    # For transformed geometry with rotated=True, we need to un-rotate it
-                    # back to the original coordinate space for validation because the
-                    # validator expects to receive non-rotated geometry and apply its own
-                    # rotation adjustment. Since transformed geometry is ALREADY rotated,
-                    # we must reverse that rotation before passing to validator.
+                    # For transformed rotated geometry, apply proper inverse rotation
+                    # to convert back to original non-rotated coordinate space.
                     section_copy = copy.deepcopy(section)
                     if label == "transformed" and section_copy.get("metadata", {}).get("rotated"):
-                        # Apply inverse rotation: swap X and Y coordinates back
                         geom = section_copy["geometry"]
+                        # Get original outer_height (equals transformed width after rotation)
+                        outer_height_orig = section_copy["metadata"]["width"]
+                        
+                        # Calculate translate values from current geometry
+                        # (they were applied to make coordinates non-negative)
+                        all_pts = []
                         for frame in geom.get("frames", []):
-                            frame["points"] = [(y, x) for (x, y) in frame["points"]]
+                            all_pts.extend(frame["points"])
                         for cutout in geom.get("cutouts", []):
-                            cutout["points"] = [(y, x) for (x, y) in cutout["points"]]
+                            all_pts.extend(cutout["points"])
                         for hole in geom.get("holes", []):
-                            hole["center"] = (hole["center"][1], hole["center"][0])
-                        # Now mark as not rotated so validator doesn't rotate again
+                            all_pts.append(hole["center"])
+                        
+                        min_x = min(p[0] for p in all_pts) if all_pts else 0
+                        min_y = min(p[1] for p in all_pts) if all_pts else 0
+                        translate_x = min_x  # Should be close to 0 or frame thickness
+                        translate_y = min_y
+                        
+                        # Apply inverse rotation: (x', y') -> (y' - ty, outer_height - (x' - tx))
+                        def inverse_rotate(pt):
+                            x_rot = pt[0] - translate_x
+                            y_rot = pt[1] - translate_y
+                            return (y_rot, outer_height_orig - x_rot)
+                        
+                        for frame in geom.get("frames", []):
+                            frame["points"] = [inverse_rotate(p) for p in frame["points"]]
+                        for cutout in geom.get("cutouts", []):
+                            cutout["points"] = [inverse_rotate(p) for p in cutout["points"]]
+                        for hole in geom.get("holes", []):
+                            hole["center"] = inverse_rotate(hole["center"])
+                        
+                        # Mark as not rotated so validator treats it as non-rotated geometry
                         section_copy["metadata"]["rotated"] = False
                     
                     result = validate_schema(section_copy)
@@ -104,16 +125,37 @@ def validate_transformed_folder(folder_path: str):
                     # mutate the original.
                     try:
                         detailed = copy.deepcopy(door.get(lbl) or door)
-                        # For transformed geometry with rotated=True, apply inverse rotation
-                        # to convert back to non-rotated space for validation
+                        # For transformed rotated geometry, apply proper inverse rotation
                         if lbl == "transformed" and detailed.get("metadata", {}).get("rotated"):
                             geom = detailed["geometry"]
+                            outer_height_orig = detailed["metadata"]["width"]
+                            
+                            # Calculate translate values
+                            all_pts = []
                             for frame in geom.get("frames", []):
-                                frame["points"] = [(y, x) for (x, y) in frame["points"]]
+                                all_pts.extend(frame["points"])
                             for cutout in geom.get("cutouts", []):
-                                cutout["points"] = [(y, x) for (x, y) in cutout["points"]]
+                                all_pts.extend(cutout["points"])
                             for hole in geom.get("holes", []):
-                                hole["center"] = (hole["center"][1], hole["center"][0])
+                                all_pts.append(hole["center"])
+                            
+                            min_x = min(p[0] for p in all_pts) if all_pts else 0
+                            min_y = min(p[1] for p in all_pts) if all_pts else 0
+                            translate_x = min_x
+                            translate_y = min_y
+                            
+                            def inverse_rotate(pt):
+                                x_rot = pt[0] - translate_x
+                                y_rot = pt[1] - translate_y
+                                return (y_rot, outer_height_orig - x_rot)
+                            
+                            for frame in geom.get("frames", []):
+                                frame["points"] = [inverse_rotate(p) for p in frame["points"]]
+                            for cutout in geom.get("cutouts", []):
+                                cutout["points"] = [inverse_rotate(p) for p in cutout["points"]]
+                            for hole in geom.get("holes", []):
+                                hole["center"] = inverse_rotate(hole["center"])
+                            
                             detailed["metadata"]["rotated"] = False
                         if detailed.get("door_category") == "Double":
                             dr["result"] = validate_double_door(detailed)

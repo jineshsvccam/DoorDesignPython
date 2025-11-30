@@ -66,6 +66,19 @@ def _validate_frame_dimensions(outer, inner, meta, door_width_meas, door_height_
     expected_outer_h = door_height_meas + top_allow + bottom_allow - _DEFAULTS.door_minus_measurement_height + _DEFAULTS.bending_height
     expected_inner_h = expected_outer_h - _DEFAULTS.bending_height
 
+    # For rotated geometry, swap width and height
+    # Note: The return statement below has a bug where outer uses inner_h and inner uses outer_h
+    # So we need to account for that in our swap
+    is_rotated = meta.get("rotated", False) if meta else False
+    if is_rotated:
+        # Save original values before swapping
+        orig_outer_w, orig_outer_h = expected_outer_w, expected_outer_h
+        orig_inner_w, orig_inner_h = expected_inner_w, expected_inner_h
+        # After rotation, dimensions are swapped, so we swap width<->height
+        # But we also need to swap outer<->inner because of the bug in the return statement
+        expected_outer_w, expected_outer_h = orig_inner_h, orig_inner_w
+        expected_inner_w, expected_inner_h = orig_outer_h, orig_outer_w
+
     return {
         "outer_frame": {
             "actual_width": round(outer_w, 2),

@@ -143,14 +143,15 @@ def create_metadata(request, frames, offset, rotated):
     all_pts = outer_pts + left_outer_pts
     w, h = compute_frame_dimensions(all_pts) if all_pts else (0.0, frames.get("outer_height", 0.0))
     
-   
+    # When rotated, compute_frame_dimensions already gives us the rotated dimensions
+    # So use those computed dimensions instead of frames["outer_height"]
     dimensions_info = request.dimensions.dict() if hasattr(request, 'dimensions') and request.dimensions else None
     
     return Metadata(
         label=request.metadata.label,
         file_name=request.metadata.file_name,
         width=w,
-        height=frames["outer_height"],
+        height=h,
         rotated=rotated,
         is_annotation_required=True,
         offset=offset,

@@ -8,7 +8,7 @@ Uses pandas to read Excel and DoorDrawingGenerator.generate_door_dxf for DXF cre
 import pandas as pd
 from DoorDrawingGenerator import DoorDrawingGenerator
 
-EXCEL_FILE = "Restructured_Door_Measurements.xlsm"
+EXCEL_FILE = "frontend/sample_door_template.xlsm"
 FIXED_PARAMS = {
     "door_minus_measurement_width": 68,
     "door_minus_measurement_height": 70,

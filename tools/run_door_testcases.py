@@ -25,8 +25,13 @@ from geometry.door_geometry import compute_door_geometry
 
 
 def discover_test_cases(test_dir: Path) -> list[Path]:
-    """Discover test case JSON files, excluding *_output.json files."""
-    files = [p for p in test_dir.glob("*.json") if "output" not in p.stem.lower()]
+    """Discover test case JSON files, excluding *_output.json and summary files."""
+    files = [
+        p for p in test_dir.glob("*.json") 
+        if "output" not in p.stem.lower() 
+        and "summary" not in p.stem.lower()
+        and "validation" not in p.stem.lower()
+    ]
     return sorted(files)
 
 

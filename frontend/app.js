@@ -119,13 +119,8 @@ function validateInputs() {
         msgs.push(`${name.replace(/_/g, " ")} must be a number.`);
         firstEl = firstEl || el;
         markInvalid(el);
-      } else if (v < MIN_ALLOW || v > MAX_ALLOW) {
-        msgs.push(
-          `${name.replace(
-            /_/g,
-            " "
-          )} must be between ${MIN_ALLOW} and ${MAX_ALLOW} mm.`
-        );
+      } else if (v !== 0 && v !== 25) {
+        msgs.push(`${name.replace(/_/g, " ")} must be either 0 or 25 mm.`);
         firstEl = firstEl || el;
         markInvalid(el);
       }
@@ -133,6 +128,137 @@ function validateInputs() {
   }
 
   return { ok: msgs.length === 0, messages: msgs, firstEl };
+}
+
+// Fire door width validation - returns { ok: bool, warning: string|null, width: number }
+function validateFireDoorWidth() {
+  const widthIn = document.querySelector('input[name="width_measurement"]');
+  const width = Number(widthIn && widthIn.value);
+
+  // Check if it's a fire door
+  const subTypeEl = document.getElementById("subType");
+  if (!subTypeEl || subTypeEl.value !== "fire") {
+    return { ok: true, warning: null, width };
+  }
+
+  const doorTypeEl = document.getElementById("doorType");
+  const isDoorDouble = doorTypeEl && doorTypeEl.value === "double";
+
+  // Fire door clearance is 190mm on each side (L-R)
+  const fireClearance = 190;
+  const minWidthSingle = 398; // 190 + 190 + minimum usable space
+  const minWidthDouble = 341; // minimum for double door
+
+  if (isDoorDouble) {
+    if (width < minWidthDouble) {
+      return {
+        ok: false,
+        warning: `⚠️ Fire Door Width Warning\n\nYou are attempting to create a double fire door with width ${width}mm.\n\nWith the required clearance of ${fireClearance}mm on each side, the application may not be able to maintain proper offset for doors less than ${minWidthDouble}mm.\n\nDo you want to continue with drawing anyway?`,
+        width,
+      };
+    }
+  } else {
+    if (width < minWidthSingle) {
+      return {
+        ok: false,
+        warning: `⚠️ Fire Door Width Warning\n\nYou are attempting to create a single fire door with width ${width}mm.\n\nThe application cannot draw a fire door with less than ${minWidthSingle}mm dimension with the provided clearance of ${fireClearance}mm on each side.\n\nDo you want to continue with drawing anyway?`,
+        width,
+      };
+    }
+  }
+
+  return { ok: true, warning: null, width };
+}
+
+// Hole offset height validation - returns { ok: bool, warning: string|null, needsChange: bool, height: number }
+function validateHoleOffsetHeight() {
+  const heightIn = document.querySelector('input[name="height_measurement"]');
+  const height = Number(heightIn && heightIn.value);
+
+  const holeOffsetEl = document.getElementById("holeOffset");
+  if (!holeOffsetEl) {
+    return { ok: true, warning: null, needsChange: false, height };
+  }
+
+  const holeOffset = holeOffsetEl.value;
+  const minHeightFor150x40 = 458;
+
+  // Only validate if hole offset is 150x40 and height is less than minimum
+  if (holeOffset === "150x40" && height < minHeightFor150x40) {
+    return {
+      ok: false,
+      warning: `⚠️ Hole Offset Height Warning\n\nYou are attempting to create a door with height ${height}mm and hole offset 150×40.\n\nThe minimum height required for hole offset 150×40 is ${minHeightFor150x40}mm.\n\nWould you like to change the hole offset to 40×80 or edit the height value?`,
+      needsChange: true,
+      height,
+    };
+  }
+
+  return { ok: true, warning: null, needsChange: false, height };
+}
+
+// Fire door height validation - returns { ok: bool, warning: string|null, height: number }
+function validateFireDoorHeight() {
+  const heightIn = document.querySelector('input[name="height_measurement"]');
+  const height = Number(heightIn && heightIn.value);
+
+  // Check if it's a fire door
+  const subTypeEl = document.getElementById("subType");
+  if (!subTypeEl || subTypeEl.value !== "fire") {
+    return { ok: true, warning: null, height };
+  }
+
+  const doorTypeEl = document.getElementById("doorType");
+  const fireOptionEl = document.getElementById("fireOption");
+  const fireOptionsContainerEl = document.getElementById(
+    "fireOptionsContainer"
+  );
+
+  // Only validate if fire options are visible and selected
+  if (
+    !fireOptionEl ||
+    !fireOptionsContainerEl ||
+    fireOptionsContainerEl.classList.contains("hidden")
+  ) {
+    return { ok: true, warning: null, height };
+  }
+
+  const isDoorDouble = doorTypeEl && doorTypeEl.value === "double";
+  const fireOption = fireOptionEl.value;
+
+  // Define minimum heights for each fire option type
+  let minHeight = 0;
+  let optionLabel = "";
+
+  if (isDoorDouble) {
+    if (fireOption === "standarddouble") {
+      minHeight = 411;
+      optionLabel = "Standard Fire Door";
+    } else if (fireOption === "fourglass") {
+      minHeight = 601;
+      optionLabel = "Four Glass Fire Door";
+    }
+  } else {
+    if (fireOption === "topfixed") {
+      minHeight = 361;
+      optionLabel = "Top-Fixed Fire Door";
+    } else if (fireOption === "bottomfixed") {
+      minHeight = 501;
+      optionLabel = "Bottom-Fixed Fire Door";
+    } else if (fireOption === "standard") {
+      minHeight = 431;
+      optionLabel = "Standard Fire Door";
+    }
+  }
+
+  if (minHeight > 0 && height < minHeight) {
+    return {
+      ok: false,
+      warning: `⚠️ Fire Door Height Warning\n\nYou are attempting to create a ${optionLabel} with height ${height}mm.\n\nThe minimum height required for ${optionLabel} is ${minHeight}mm.\n\nDo you want to continue with drawing anyway?`,
+      height,
+    };
+  }
+
+  return { ok: true, warning: null, height };
 }
 
 function setTogglePosition() {
@@ -222,6 +348,38 @@ document.addEventListener("click", (e) => {
         showToast("Please fix input errors: " + v.messages.join(" "), "error");
         if (v.firstEl) v.firstEl.focus();
         return;
+      }
+
+      // Check fire door width validation
+      const fireCheck = validateFireDoorWidth();
+      if (!fireCheck.ok) {
+        const userConfirmed = await showConfirmDialog(fireCheck.warning);
+        if (!userConfirmed) {
+          return; // User chose to edit values
+        }
+      }
+
+      // Check hole offset height validation
+      const holeCheck = validateHoleOffsetHeight();
+      if (!holeCheck.ok) {
+        const userAction = await showHoleOffsetDialog(holeCheck.warning);
+        if (userAction === "edit") {
+          return; // User chose to edit height
+        } else if (userAction === "change") {
+          // Change hole offset to 40x80
+          const holeOffsetEl = document.getElementById("holeOffset");
+          if (holeOffsetEl) holeOffsetEl.value = "40x80";
+          showToast("Hole offset changed to 40×80", "success");
+        }
+      }
+
+      // Check fire door height validation
+      const fireHeightCheck = validateFireDoorHeight();
+      if (!fireHeightCheck.ok) {
+        const userConfirmed = await showConfirmDialog(fireHeightCheck.warning);
+        if (!userConfirmed) {
+          return; // User chose to edit values
+        }
       }
 
       btn.disabled = true;
@@ -441,6 +599,38 @@ form.addEventListener("submit", async (e) => {
       form.classList.remove("loading");
       if (v.firstEl) v.firstEl.focus();
       return;
+    }
+
+    // Check fire door width validation
+    const fireCheck = validateFireDoorWidth();
+    if (!fireCheck.ok) {
+      const userConfirmed = await showConfirmDialog(fireCheck.warning);
+      if (!userConfirmed) {
+        return; // User chose to edit values
+      }
+    }
+
+    // Check hole offset height validation
+    const holeCheck = validateHoleOffsetHeight();
+    if (!holeCheck.ok) {
+      const userAction = await showHoleOffsetDialog(holeCheck.warning);
+      if (userAction === "edit") {
+        return; // User chose to edit height
+      } else if (userAction === "change") {
+        // Change hole offset to 40x80
+        const holeOffsetEl = document.getElementById("holeOffset");
+        if (holeOffsetEl) holeOffsetEl.value = "40x80";
+        showToast("Hole offset changed to 40×80", "success");
+      }
+    }
+
+    // Check fire door height validation
+    const fireHeightCheck = validateFireDoorHeight();
+    if (!fireHeightCheck.ok) {
+      const userConfirmed = await showConfirmDialog(fireHeightCheck.warning);
+      if (!userConfirmed) {
+        return; // User chose to edit values
+      }
     }
   }
 
@@ -711,6 +901,38 @@ if (previewBtn) {
       return;
     }
 
+    // Check fire door width validation
+    const fireCheck = validateFireDoorWidth();
+    if (!fireCheck.ok) {
+      const userConfirmed = await showConfirmDialog(fireCheck.warning);
+      if (!userConfirmed) {
+        return; // User chose to edit values
+      }
+    }
+
+    // Check hole offset height validation
+    const holeCheck = validateHoleOffsetHeight();
+    if (!holeCheck.ok) {
+      const userAction = await showHoleOffsetDialog(holeCheck.warning);
+      if (userAction === "edit") {
+        return; // User chose to edit height
+      } else if (userAction === "change") {
+        // Change hole offset to 40x80
+        const holeOffsetEl = document.getElementById("holeOffset");
+        if (holeOffsetEl) holeOffsetEl.value = "40x80";
+        showToast("Hole offset changed to 40×80", "success");
+      }
+    }
+
+    // Check fire door height validation
+    const fireHeightCheck = validateFireDoorHeight();
+    if (!fireHeightCheck.ok) {
+      const userConfirmed = await showConfirmDialog(fireHeightCheck.warning);
+      if (!userConfirmed) {
+        return; // User chose to edit values
+      }
+    }
+
     const payload = buildRequestPayload();
     previewBox.classList.remove("hidden");
     previewBox.textContent = "Loading...";
@@ -748,6 +970,132 @@ function showToast(msg, type = "success") {
   toast.setAttribute("role", "alert");
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 3000);
+}
+
+// Show confirmation dialog and return promise that resolves to true/false
+function showConfirmDialog(message) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.style.cssText = `
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5); z-index: 10000;
+      display: flex; align-items: center; justify-content: center;
+    `;
+
+    const dialog = document.createElement("div");
+    dialog.style.cssText = `
+      background: white; padding: 24px; border-radius: 12px;
+      max-width: 500px; margin: 20px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    `;
+
+    const messageEl = document.createElement("pre");
+    messageEl.textContent = message;
+    messageEl.style.cssText = `
+      margin: 0 0 20px 0; white-space: pre-wrap;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px; line-height: 1.6; color: #333;
+    `;
+
+    const btnContainer = document.createElement("div");
+    btnContainer.style.cssText = `
+      display: flex; gap: 12px; justify-content: flex-end;
+    `;
+
+    const btnCancel = document.createElement("button");
+    btnCancel.textContent = "Edit Values";
+    btnCancel.style.cssText = `
+      padding: 10px 20px; border: 1px solid #ccc;
+      background: white; border-radius: 6px; cursor: pointer;
+      font-size: 14px; font-weight: 500;
+    `;
+    btnCancel.onclick = () => {
+      overlay.remove();
+      resolve(false);
+    };
+
+    const btnConfirm = document.createElement("button");
+    btnConfirm.textContent = "Continue Drawing";
+    btnConfirm.style.cssText = `
+      padding: 10px 20px; border: none;
+      background: #dc2626; color: white; border-radius: 6px;
+      cursor: pointer; font-size: 14px; font-weight: 500;
+    `;
+    btnConfirm.onclick = () => {
+      overlay.remove();
+      resolve(true);
+    };
+
+    btnContainer.appendChild(btnCancel);
+    btnContainer.appendChild(btnConfirm);
+    dialog.appendChild(messageEl);
+    dialog.appendChild(btnContainer);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+  });
+}
+
+// Show hole offset change dialog - returns 'change' to change offset, 'edit' to edit values, 'continue' to proceed
+function showHoleOffsetDialog(message) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.style.cssText = `
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5); z-index: 10000;
+      display: flex; align-items: center; justify-content: center;
+    `;
+
+    const dialog = document.createElement("div");
+    dialog.style.cssText = `
+      background: white; padding: 24px; border-radius: 12px;
+      max-width: 500px; margin: 20px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    `;
+
+    const messageEl = document.createElement("pre");
+    messageEl.textContent = message;
+    messageEl.style.cssText = `
+      margin: 0 0 20px 0; white-space: pre-wrap;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px; line-height: 1.6; color: #333;
+    `;
+
+    const btnContainer = document.createElement("div");
+    btnContainer.style.cssText = `
+      display: flex; gap: 12px; justify-content: flex-end;
+    `;
+
+    const btnEdit = document.createElement("button");
+    btnEdit.textContent = "Edit Height";
+    btnEdit.style.cssText = `
+      padding: 10px 20px; border: 1px solid #ccc;
+      background: white; border-radius: 6px; cursor: pointer;
+      font-size: 14px; font-weight: 500;
+    `;
+    btnEdit.onclick = () => {
+      overlay.remove();
+      resolve("edit");
+    };
+
+    const btnChange = document.createElement("button");
+    btnChange.textContent = "Change to 40×80";
+    btnChange.style.cssText = `
+      padding: 10px 20px; border: none;
+      background: #16a34a; color: white; border-radius: 6px;
+      cursor: pointer; font-size: 14px; font-weight: 500;
+    `;
+    btnChange.onclick = () => {
+      overlay.remove();
+      resolve("change");
+    };
+
+    btnContainer.appendChild(btnEdit);
+    btnContainer.appendChild(btnChange);
+    dialog.appendChild(messageEl);
+    dialog.appendChild(btnContainer);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+  });
 }
 
 document.querySelector("h2").addEventListener("click", () => {

@@ -18,6 +18,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 30m
           script: |
             set -e
             echo "Starting deployment..."
@@ -34,9 +35,16 @@ jobs:
             echo "Installing dependencies..."
             pip3 install --user -r requirements.txt || { echo "Dependency installation failed"; exit 1; }
 
-            # Stop any running uvicorn process
+            # Stop any running uvicorn process - find and kill by port
             echo "Stopping any existing uvicorn processes..."
-            pkill -f "uvicorn fastapi_app.main:app" || echo "No existing uvicorn process found"
+            PIDS=$(lsof -ti:8000 2>/dev/null || true)
+            if [ ! -z "$PIDS" ]; then
+              echo "Found processes on port 8000: $PIDS"
+              kill -9 $PIDS || true
+              echo "Killed existing processes"
+            else
+              echo "No process found on port 8000"
+            fi
 
             # Clean up old PID file
             rm -f uvicorn.pid

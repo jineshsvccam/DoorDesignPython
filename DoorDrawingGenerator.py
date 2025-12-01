@@ -1,43 +1,50 @@
 from __future__ import annotations
 
-from numpy import true_divide
-
 """DoorDrawingGenerator.py
 
 Generate DXF files for door designs with annotated dimensions and cutouts.
 Uses ezdxf for DXF creation.
 """
 
-from ezdxf.filemanagement import new
-from typing import Tuple, Optional, Union
-from collections.abc import Iterable
-from ezdxf.document import Drawing
-from ezdxf.layouts.layout import Modelspace
-from ezdxf.enums import TextEntityAlignment
-from geometry.door_geometry import compute_door_geometry
-from fastapi_app.schemas_input import DoorDXFRequest
-from fastapi_app.schemas_output import SchemasOutput
+import json
 import logging
-from annotation_styles import styles, CURRENT_STYLE_INDEX
 import os
 import traceback
+from collections.abc import Iterable
+from contextvars import ContextVar
+from datetime import datetime
+from pathlib import Path
+from typing import Tuple, Optional, Union
+
+from ezdxf.document import Drawing
+from ezdxf.enums import TextEntityAlignment
+from ezdxf.filemanagement import new
+from ezdxf.layouts.layout import Modelspace
+
+from annotation_styles import styles, CURRENT_STYLE_INDEX
+from fastapi_app.schemas_input import DoorDXFRequest
+from fastapi_app.schemas_output import SchemasOutput
+from geometry.door_geometry import compute_door_geometry
 
 logger = logging.getLogger(__name__)
 
+# Context variable to retrieve request_id (set by FastAPI middleware)
+request_id_ctx: ContextVar[Optional[str]] = ContextVar('request_id', default=None)
+
 
 def ensure_dimstyle(doc, name="DoorDimStyle"):
+    """Ensure a dimension style exists in the DXF document."""
     try:
-        # doc.dimstyles supports membership test and .new()
         if name not in doc.dimstyles:
             ds = doc.dimstyles.new(name)
             ds.dxf.dimtxsty = "Standard"   # link to text style
             ds.dxf.dimclrd = 7             # dimension line color
             ds.dxf.dimclre = 7             # extension line color
             ds.dxf.dimclrt = 7             # text color
-            print(f"✅ Created new dimstyle '{name}'")
+            logger.debug(f"Created new dimstyle '{name}'")
         return name
     except Exception as e:
-        print(f"❌ Failed to create dimstyle '{name}':", e)
+        logger.warning(f"Failed to create dimstyle '{name}': {e}")
         return "Standard"
 
 class DoorDrawingGenerator:
@@ -59,64 +66,146 @@ class DoorDrawingGenerator:
         save_file: bool = True,
         rotated: bool = False,
         save_pdf: bool = False,
+        request_id: Optional[str] = None,
     ) -> None:
-        """Generate a DXF file for the door with annotations.
-
-        The request is a `DoorDXFRequest` model. If `doc`/`msp` are not provided,
-        a new ezdxf document will be created. If `save_file` is True and
-        `file_name` is provided the DXF will be saved.
+        """Generate a DXF file for a door design with annotations.
+        
+        Args:
+            request: Door parameters as a Pydantic model (DoorDXFRequest).
+            schema: Pre-computed door geometry (SchemasOutput). If None, computed from request.
+            file_name: Output DXF file path. If None, no file is saved.
+            label_name: Label identifier for batch operations.
+            isannotationRequired: Whether to include dimension annotations.
+            offset: (x, y) offset to apply to the entire drawing.
+            doc: Existing ezdxf Drawing document (optional, creates new if None).
+            msp: Existing modelspace (optional, creates new if None).
+            save_file: Whether to save the DXF file to disk.
+            rotated: Whether to rotate the door 90 degrees.
+            save_pdf: Whether to also export as PDF.
+            request_id: Request ID for logging correlation (set by FastAPI middleware).
+            
+        Side Effects:
+            - Logs request and response JSON to fastapi_app/logs/requests/
+            - Creates DXF file if save_file=True
+            - Creates PDF file if save_pdf=True
         """
         # Ensure we have either a schema or a request to compute one
         if schema is None and request is None:
             raise ValueError("Either 'request' or 'schema' must be provided to generate_door_dxf")
 
-        # If schema not provided, compute it from the request using the offset/rotated flags
+        # If schema not provided, compute it from the request
         if schema is None:
-            # request is Optional[DoorDXFRequest] at type-level, but we already
-            # validated above that at least one of request/schema is provided.
-            # Guard for the type-checker and runtime with an assertion.
             assert request is not None, "request must be provided when schema is not"
             schema = compute_door_geometry(request, rotated=rotated, offset=offset)
+        
+        # Log request and response (schema) to JSON files for debugging and auditing
+        try:
+            # Create logs directory if it doesn't exist
+            log_dir = Path(__file__).resolve().parent / "fastapi_app" / "logs" / "requests"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Resolve request_id: use passed parameter, context variable, or fallback to timestamp
+            if request_id is None:
+                request_id = request_id_ctx.get()
+            
+            # Determine door identifier for batch operations
+            door_identifier = None
+            if file_name:
+                # Extract a clean identifier from file_name (e.g., "door_F14P2.dxf" -> "door_F14P2")
+                door_identifier = Path(file_name).stem
+            elif label_name:
+                door_identifier = label_name
+            
+            if request_id:
+                # For API requests with request_id
+                # For batch operations with multiple doors, append a counter or door ID
+                # For single operations, just use request_id
+                if door_identifier and label_name:
+                    # Batch operation: append door identifier to request_id
+                    base_filename = f"{request_id}_{door_identifier}"
+                else:
+                    # Single operation: use request_id alone
+                    base_filename = request_id
+            else:
+                # Fallback: Generate timestamp-based filename (standalone execution)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                if door_identifier:
+                    base_filename = f"{timestamp}_{door_identifier}"
+                else:
+                    base_filename = timestamp
+            
+            # Log request if available
+            if request is not None:
+                request_file = log_dir / f"{base_filename}_request.json"
+                try:
+                    # Serialize request using pydantic methods
+                    if hasattr(request, "model_dump"):
+                        request_data = request.model_dump()
+                    elif hasattr(request, "dict"):
+                        request_data = request.dict()
+                    else:
+                        request_data = {"error": "Could not serialize request"}
+                    
+                    with open(request_file, "w", encoding="utf-8") as f:
+                        json.dump(request_data, f, indent=2, default=str)
+                    logger.debug(f"Request logged to: {request_file}")
+                except Exception as e:
+                    logger.warning(f"Failed to log request: {e}")
+            
+            # Log response (schema) if available
+            if schema is not None:
+                response_file = log_dir / f"{base_filename}_response.json"
+                try:
+                    # Serialize schema using pydantic methods
+                    if hasattr(schema, "model_dump"):
+                        response_data = schema.model_dump()
+                    elif hasattr(schema, "dict"):
+                        response_data = schema.dict()
+                    else:
+                        response_data = {"error": "Could not serialize schema"}
+                    
+                    with open(response_file, "w", encoding="utf-8") as f:
+                        json.dump(response_data, f, indent=2, default=str)
+                    logger.debug(f"Response logged to: {response_file}")
+                except Exception as e:
+                    logger.warning(f"Failed to log response: {e}")
+        except Exception as e:
+            # Don't fail DXF generation if logging fails
+            logger.warning(f"Failed to log request/response: {e}")
 
-        # Validate the computed / provided schema before drawing. Call the
-        # centralized `validate_schema(schema)` function in `tools.validator`.
-        # The validator performs all checks and prints a detailed JSON result
-        # if validation fails. If validator is unavailable or raises an
-        # exception we abort to avoid producing incorrect DXFs.
+        # Validate the schema before drawing to ensure correctness
+        # Uses tools.validator.validate_schema for comprehensive checks
         try:
             try:
                 from tools.validator import validate_schema
             except Exception:
                 import runpy
-                # use module-level os (imported at top) to avoid creating a local
-                # 'os' binding that would shadow the module-level name
                 validator_path = os.path.join(os.path.dirname(__file__), "tools", "validator.py")
                 validator_ns = runpy.run_path(validator_path)
                 validate_schema = validator_ns.get("validate_schema")
 
             if not validate_schema:
-                print("Validator not available; aborting DXF generation to avoid unsafe output.")
+                logger.error("Validator not available; aborting DXF generation to avoid unsafe output.")
                 return
 
             passed = bool(validate_schema(schema))
-            passed = True # TEMP OVERRIDE FOR TESTING ONLY
+            passed = True  # TEMP OVERRIDE FOR TESTING ONLY
         except Exception as e:
             try:
-                import traceback, json
-                err = {"validation_error": str(e), "traceback": traceback.format_exc()}
-                print(json.dumps(err, indent=2))
+                import traceback as tb
+                err = {"validation_error": str(e), "traceback": tb.format_exc()}
+                logger.error(f"Validation error: {json.dumps(err, indent=2)}")
             except Exception:
-                print("Validation failed and error details could not be serialized.")
+                logger.error("Validation failed and error details could not be serialized.")
             return
 
         if not passed:
-            # Validator already printed the detailed JSON; abort drawing.
             return
 
-        # Ensure we have a drawing document and modelspace to draw into
+        # Create DXF document and modelspace if not provided
         if doc is None or msp is None:
             doc = new(dxfversion="R2010")
-            # create common layers if not present
+            # Create common layers
             try:
                 doc.layers.new(name="CUT", dxfattribs={"color": 4})
             except Exception:
@@ -131,7 +220,7 @@ class DoorDrawingGenerator:
                 pass
             msp = doc.modelspace()
 
-        # Ensure our dimension style exists and remember its name
+        # Ensure dimension style exists
         try:
             style_name = ensure_dimstyle(doc, "DoorDimStyle")
         except Exception:
@@ -178,7 +267,7 @@ class DoorDrawingGenerator:
         # Save file only if requested
         if save_file and file_name is not None:
             doc.saveas(file_name)
-            print(f"DXF file '{file_name}' created successfully.")
+            logger.info(f"DXF file '{file_name}' created successfully.")
 
             # If user also wants a PDF, generate it using the headless exporter
             if save_pdf:
@@ -186,9 +275,9 @@ class DoorDrawingGenerator:
                     pdf_name = os.path.splitext(str(file_name))[0] + ".pdf"
                     from tools.export_dxf_to_pdf_headless import export_dxf_to_pdf_headless
                     export_dxf_to_pdf_headless(doc, pdf_name)
-                    print(f"PDF file '{pdf_name}' created successfully.")
+                    logger.info(f"PDF file '{pdf_name}' created successfully.")
                 except Exception as e:
-                    print(f"Failed to export PDF: {e}")
+                    logger.error(f"Failed to export PDF: {e}")
                     logger.exception("PDF export failed: %s", e)
 
     @staticmethod
@@ -486,7 +575,7 @@ def _try_virtual_entities(dim, msp):
             msp.add_entity(e.copy())     # use copy to detach from original doc
         return len(vlist)
     except Exception as ex:
-        print("virtual_entities failed:", ex)
+        logger.warning(f"virtual_entities failed: {ex}")
         return 0
 
 
@@ -660,7 +749,7 @@ def draw_annotations(msp, schema, isannotationRequired=True, dim_text_height=3.0
                             try:
                                 dim.render()
                             except Exception as e:
-                                print(f"⚠️ Dimension render failed: {e}")
+                                logger.warning(f"Dimension render failed: {e}")
 
                             offset_dir = (0, distance) if angle == 0 else (distance, 0)
                             try:
@@ -677,7 +766,7 @@ def draw_annotations(msp, schema, isannotationRequired=True, dim_text_height=3.0
                                 pass
 
                     except Exception as e:
-                        print("❌ Dimension creation failed:", e)
+                        logger.warning(f"Dimension creation failed: {e}")
 
                 # --- 📝 NOTE ---
                 elif atype == "note":
@@ -746,4 +835,4 @@ if __name__ == "__main__":
         # save_pdf is a parameter on generate_door_dxf (not part of metadata)
         DoorDrawingGenerator.generate_door_dxf(req, file_name="door_F14P2.dxf", save_pdf=True)
     except Exception as e:
-        print(f"Error: {e}")
+        logger.error(f"Error in main execution: {e}")

@@ -216,7 +216,7 @@ def generate_bin_dxf(sheet_w, sheet_h, doors_for_generator, placements, out_dxf,
 def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isannotationRequired=True):
    
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    output_dir = os.path.join(script_dir, 'output')
+    output_dir = os.path.join(script_dir, 'outputBulk')
     # Ensure output directory exists and is empty before generating new files
     if os.path.exists(output_dir):
         # remove all contents inside output_dir (files and subdirectories)

@@ -1,49 +1,51 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Form, Query
-from fastapi.responses import FileResponse
 import asyncio
-import tempfile, os, sys
-from pathlib import Path
-import re
-import logging
-from logging.handlers import RotatingFileHandler
-import uuid
-import time
+import ipaddress
 import json
+import logging
+import os
+import re
+import sys
+import tempfile
+import time
 import traceback
+import uuid
+from contextvars import ContextVar
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+from typing import Optional, List
+
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Form, Query
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response as StarletteResponse
-import ipaddress
-from fastapi.responses import JSONResponse
 
-# Configure fontconfig for Linux systems BEFORE any imports that use fonts
-if os.name == 'posix':  # Linux/Unix
+# Context variable to store request_id throughout the request lifecycle
+request_id_ctx: ContextVar[Optional[str]] = ContextVar('request_id', default=None)
+
+# Configure fontconfig for Linux systems (must be done before font imports)
+if os.name == 'posix':
     if 'FONTCONFIG_PATH' not in os.environ:
         os.environ['FONTCONFIG_PATH'] = '/etc/fonts'
     if 'FONTCONFIG_FILE' not in os.environ:
         os.environ['FONTCONFIG_FILE'] = '/etc/fonts/fonts.conf'
 
-# --- Add this to ensure imports work correctly ---
-# If your main FastAPI app is under /fastapi_app and BatchDoorDXFGenerator.py is in parent folder
+# Add parent directory to Python path for imports
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-# Load environment variables from project root .env (if present)
+
+# Load environment variables from .env file if available
 try:
     from dotenv import load_dotenv
     load_dotenv(str(Path(__file__).resolve().parents[1] / ".env"))
 except Exception:
-    # python-dotenv not installed or .env missing — continue using existing env
     pass
 
-# Import your DXF generator helper
-from BatchDoorDXFGenerator import generate_zip_from_excel
-from typing import Optional, List
-from geometry.prepare_dimensions import prepare_dimensions
-from BatchDoorDXFGenerator import process_bins
+# Project imports
+from BatchDoorDXFGenerator import generate_zip_from_excel, process_bins
 from DoorDrawingGenerator import DoorDrawingGenerator
+from fastapi_app.routes.auth import router as auth_router
 from fastapi_app.schemas_input import DoorDXFRequest
 from geometry.door_geometry import compute_door_geometry
-
-# Import auth routes
-from fastapi_app.routes.auth import router as auth_router
+from geometry.prepare_dimensions import prepare_dimensions
 
 # Serve the frontend static files and allow CORS for external UI (optional)
 from fastapi.staticfiles import StaticFiles
@@ -76,13 +78,15 @@ if not logger.handlers:
 logging.getLogger("uvicorn.access").addHandler(handler)
 logging.getLogger("uvicorn.error").addHandler(handler)
 
-# Feature flags / configuration
-# When true (set env FULL_BODY_LOGGING=1 or true), include full textual request/response
-# bodies in per-request files (subject to MAX_FULL_BODY_BYTES cap). Binary/multipart uploads
-# are always excluded.
+# Attach handler to DoorDrawingGenerator logger so its messages appear in app.log
+dxf_logger = logging.getLogger("DoorDrawingGenerator")
+dxf_logger.setLevel(logging.DEBUG)  # Capture debug messages too
+if not dxf_logger.handlers:
+    dxf_logger.addHandler(handler)
+
+# Feature flags and configuration
 FULL_BODY_LOGGING = str(os.environ.get("FULL_BODY_LOGGING", "true")).lower() in ("1", "true", "yes")
-# Maximum allowed bytes to include when FULL_BODY_LOGGING is enabled (default 1MB)
-MAX_FULL_BODY_BYTES = int(os.environ.get("MAX_FULL_BODY_BYTES", "5242880"))
+MAX_FULL_BODY_BYTES = int(os.environ.get("MAX_FULL_BODY_BYTES", "5242880"))  # 5MB default
 
 def _is_textual_content_type(ct: str) -> bool:
     if not ct:
@@ -96,9 +100,7 @@ def _is_textual_content_type(ct: str) -> bool:
     return False
 
 
-# --- IP whitelist configuration ------------------------------------
-# Set ALLOWED_IPS env var to a comma-separated list of IPs or CIDR ranges.
-# Example: ALLOWED_IPS="127.0.0.1,192.168.1.0/24"
+# IP whitelist configuration (ALLOWED_IPS="127.0.0.1,192.168.1.0/24")
 ALLOWED_IPS = os.environ.get("ALLOWED_IPS", "").strip()
 ALLOWED_NETWORKS = []
 if ALLOWED_IPS:
@@ -110,13 +112,10 @@ if ALLOWED_IPS:
             net = ipaddress.ip_network(t, strict=False)
             ALLOWED_NETWORKS.append(net)
         except Exception:
-            # ignore malformed entries
             logger.warning("Ignored invalid ALLOWED_IPS entry: %s", t)
 
-# Auth enforcement configuration
-# Set REQUIRE_AUTH=true to enforce cookie-based authentication on all protected endpoints
+# Authentication configuration
 REQUIRE_AUTH = os.environ.get("REQUIRE_AUTH", "false").lower() in ("true", "1", "yes")
-# Public paths that don't require authentication
 PUBLIC_PATHS = {
     "/static", "/register", "/check-auth", 
     "/health", "/healthz", "/docs", "/openapi.json", "/redoc"
@@ -454,6 +453,9 @@ async def request_logging_middleware(request: StarletteRequest, call_next):
     """Log request start/finish, client IP, request id, body preview (skip multipart), and small response preview."""
     # correlation id
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    
+    # Store request_id in context variable for use throughout the request
+    request_id_ctx.set(request_id)
 
     # client IP: prefer X-Forwarded-For
     xff = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
@@ -527,7 +529,12 @@ async def request_logging_middleware(request: StarletteRequest, call_next):
             resp_body += chunk
         # response content-type may be in headers
         resp_ct = response.headers.get("content-type", "")
-        resp_text = resp_body.decode("utf-8", errors="replace")[:1024]
+        
+        # Only create preview for text content types, not binary
+        if _is_textual_content_type(resp_ct):
+            resp_text = resp_body.decode("utf-8", errors="replace")[:1024]
+        else:
+            resp_text = f"<binary content: {resp_ct}, {len(resp_body)} bytes>"
 
         # Decide whether to capture full response body
         should_log_full_response = False
@@ -548,40 +555,6 @@ async def request_logging_middleware(request: StarletteRequest, call_next):
             "process_time_s": round(process_time, 4),
             "response_preview": resp_text,
         }))
-        # also write a per-request JSON file for full request/response auditing
-        try:
-            req_logs_dir = logs_dir / "requests"
-            req_logs_dir.mkdir(parents=True, exist_ok=True)
-            req_file = req_logs_dir / f"{request_id}.json"
-            payload = {
-                "request_id": request_id,
-                "method": request.method,
-                "path": str(request.url),
-                "client_ip": client_ip,
-                "user": user_ident,
-                "status_code": response.status_code,
-                "process_time_s": round(process_time, 4),
-                "request_body_preview": body_preview,
-                "response_preview": resp_text,
-                "timestamp": time.time(),
-            }
-            # attach full bodies when enabled and safe
-            try:
-                if should_log_full_request:
-                    payload["request_body"] = raw_body.decode("utf-8", errors="replace")
-            except Exception:
-                payload["request_body"] = None
-            try:
-                if should_log_full_response:
-                    payload["response_body"] = resp_body.decode("utf-8", errors="replace")
-            except Exception:
-                payload["response_body"] = None
-            tmp = req_file.with_suffix(".tmp")
-            with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump(payload, fh, indent=2)
-            os.replace(tmp, req_file)
-        except Exception:
-            logger.exception("Failed to write per-request log file %s", request_id)
 
         return new_resp
     except Exception:
@@ -597,29 +570,6 @@ async def request_logging_middleware(request: StarletteRequest, call_next):
             "process_time_s": round(process_time, 4),
             "response_preview": "<not-captured>",
         }))
-        # write limited per-request log when response body couldn't be captured
-        try:
-            req_logs_dir = logs_dir / "requests"
-            req_logs_dir.mkdir(parents=True, exist_ok=True)
-            req_file = req_logs_dir / f"{request_id}.json"
-            payload = {
-                "request_id": request_id,
-                "method": request.method,
-                "path": str(request.url),
-                "client_ip": client_ip,
-                "user": user_ident,
-                "status_code": getattr(response, "status_code", "unknown"),
-                "process_time_s": round(process_time, 4),
-                "request_body_preview": body_preview,
-                "response_preview": None,
-                "timestamp": time.time(),
-            }
-            tmp = req_file.with_suffix(".tmp")
-            with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump(payload, fh, indent=2)
-            os.replace(tmp, req_file)
-        except Exception:
-            logger.exception("Failed to write per-request log file (streaming) %s", request_id)
         return response
 
 
@@ -638,10 +588,26 @@ async def generate_single_dxf(params: DoorDXFRequest = Body(...), save_pdf: bool
     filename = os.path.basename(params.metadata.file_name or "door_output.dxf")
     out_path = output_dir / filename
 
+    # Get the request_id from context to pass explicitly
+    current_request_id = request_id_ctx.get()
+
     try:
-        # run the potentially blocking generation in a thread
-        # pass save_pdf flag through so DoorDrawingGenerator can export a PDF when requested
-        await asyncio.to_thread(DoorDrawingGenerator.generate_door_dxf, params, file_name=str(out_path), isannotationRequired=True, save_pdf=bool(save_pdf))
+        # run the potentially blocking generation in a thread, passing request_id explicitly
+        await asyncio.to_thread(
+            DoorDrawingGenerator.generate_door_dxf,
+            params,
+            None,  # schema
+            str(out_path),  # file_name
+            None,  # label_name
+            True,  # isannotationRequired
+            (0.0, 0.0),  # offset
+            None,  # doc
+            None,  # msp
+            True,  # save_file
+            False,  # rotated
+            bool(save_pdf),  # save_pdf
+            current_request_id,  # request_id
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DXF generation failed: {e}")
 
@@ -689,17 +655,18 @@ async def get_dxf_geometry(params: DoorDXFRequest = Body(...)):
 
 
 if __name__ == "__main__":
-    # When running locally or on Replit this will use the PORT env var if present.
     port = int(os.environ.get("PORT", 8000))
-    # Optional debug attach: set DEBUG_WAIT=1 in env to wait for debugger attach
+    
+    # Optional debugger attachment (set DEBUG_WAIT=1)
     if os.environ.get("DEBUG_WAIT") == "1":
         try:
             import debugpy
-            print("Waiting for debugger to attach on 5678...")
+            logger.info("Waiting for debugger to attach on port 5678...")
             debugpy.listen(5678)
             debugpy.wait_for_client()
-            print("Debugger attached, continuing...")
-        except Exception:
-            print("debugpy not available or failed to start; continuing without debugger")
+            logger.info("Debugger attached, continuing...")
+        except Exception as e:
+            logger.warning(f"debugpy not available or failed to start: {e}")
 
+    import uvicorn
     uvicorn.run("fastapi_app.main:app", host="0.0.0.0", port=port, log_level="info")

@@ -34,16 +34,15 @@ jobs:
             echo "Installing dependencies..."
             pip3 install --user -r requirements.txt || { echo "Dependency installation failed"; exit 1; }
 
-            # Stop any running uvicorn process using PID file
-            echo "Checking for existing uvicorn process..."
-            if [ -f uvicorn.pid ]; then
-              echo "Stopping existing uvicorn..."
-              kill $(cat uvicorn.pid) || true
-              rm -f uvicorn.pid
-              sleep 3
-            else
-              echo "No uvicorn PID file found"
-            fi
+            # Stop any running uvicorn process
+            echo "Stopping any existing uvicorn processes..."
+            pkill -f "uvicorn fastapi_app.main:app" || echo "No existing uvicorn process found"
+
+            # Clean up old PID file
+            rm -f uvicorn.pid
+
+            # Wait for port to be released
+            sleep 3
 
             # Start FastAPI with nohup and save PID
             echo "Starting FastAPI..."

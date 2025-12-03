@@ -41,7 +41,7 @@ def ensure_dimstyle(doc, name="DoorDimStyle"):
             ds.dxf.dimclrd = 7             # dimension line color
             ds.dxf.dimclre = 7             # extension line color
             ds.dxf.dimclrt = 7             # text color
-            logger.debug(f"Created new dimstyle '{name}'")
+            #logger.debug(f"Created new dimstyle '{name}'")
         return name
     except Exception as e:
         logger.warning(f"Failed to create dimstyle '{name}': {e}")

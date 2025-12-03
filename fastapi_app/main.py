@@ -1,5 +1,4 @@
 import asyncio
-import ipaddress
 import json
 import logging
 import os
@@ -7,8 +6,6 @@ import re
 import sys
 import tempfile
 import time
-import traceback
-import uuid
 from contextvars import ContextVar
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -17,7 +14,6 @@ from typing import Optional, List
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Form, Query
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.requests import Request as StarletteRequest
-from starlette.responses import Response as StarletteResponse
 
 # Context variable to store request_id throughout the request lifecycle
 request_id_ctx: ContextVar[Optional[str]] = ContextVar('request_id', default=None)
@@ -44,6 +40,17 @@ from BatchDoorDXFGenerator import generate_zip_from_excel, process_bins
 from DoorDrawingGenerator import DoorDrawingGenerator
 from fastapi_app.routes.auth import router as auth_router
 from fastapi_app.schemas_input import DoorDXFRequest
+from fastapi_app.log_helper import (
+    parse_json_log_entry,
+    process_request_start,
+    process_request_finish,
+    process_dxf_generation,
+    process_response_log,
+    process_pdf_generation,
+    build_single_executions,
+    associate_bulk_files,
+    build_bulk_executions,
+)
 from geometry.door_geometry import compute_door_geometry
 from geometry.prepare_dimensions import prepare_dimensions
 
@@ -84,144 +91,19 @@ dxf_logger.setLevel(logging.DEBUG)  # Capture debug messages too
 if not dxf_logger.handlers:
     dxf_logger.addHandler(handler)
 
-# Feature flags and configuration
-FULL_BODY_LOGGING = str(os.environ.get("FULL_BODY_LOGGING", "true")).lower() in ("1", "true", "yes")
-MAX_FULL_BODY_BYTES = int(os.environ.get("MAX_FULL_BODY_BYTES", "5242880"))  # 5MB default
+# Include auth routes
+app.include_router(auth_router, tags=["Authentication"])
 
-def _is_textual_content_type(ct: str) -> bool:
-    if not ct:
-        return False
-    ct = ct.lower()
-    if ct.startswith("text/"):
-        return True
-    # treat common structured text types as textual
-    if "json" in ct or "xml" in ct or "+json" in ct or "javascript" in ct or "yaml" in ct:
-        return True
-    return False
+# Register middleware and exception handlers
+from fastapi_app import middleware
 
+# Initialize middleware with app context
+middleware.init_middleware(logger, logs_dir, request_id_ctx)
 
-# IP whitelist configuration (ALLOWED_IPS="127.0.0.1,192.168.1.0/24")
-ALLOWED_IPS = os.environ.get("ALLOWED_IPS", "").strip()
-ALLOWED_NETWORKS = []
-if ALLOWED_IPS:
-    for token in ALLOWED_IPS.split(","):
-        t = token.strip()
-        if not t:
-            continue
-        try:
-            net = ipaddress.ip_network(t, strict=False)
-            ALLOWED_NETWORKS.append(net)
-        except Exception:
-            logger.warning("Ignored invalid ALLOWED_IPS entry: %s", t)
-
-# Authentication configuration
-REQUIRE_AUTH = os.environ.get("REQUIRE_AUTH", "false").lower() in ("true", "1", "yes")
-PUBLIC_PATHS = {
-    "/static", "/register", "/check-auth", 
-    "/health", "/healthz", "/docs", "/openapi.json", "/redoc"
-}
-
-
-# IP whitelist middleware: short-circuit requests from non-whitelisted IPs
-@app.middleware("http")
-async def ip_whitelist_middleware(request: StarletteRequest, call_next):
-    # If no networks configured, allow all
-    if not ALLOWED_NETWORKS:
-        return await call_next(request)
-
-    # determine client IP (prefer X-Forwarded-For)
-    xff = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
-    if xff:
-        client_ip = xff.split(",")[0].strip()
-    else:
-        client_ip = request.client.host if request.client else None
-
-    allowed = False
-    try:
-        if client_ip:
-            ipaddr = ipaddress.ip_address(client_ip)
-            for net in ALLOWED_NETWORKS:
-                if ipaddr in net:
-                    allowed = True
-                    break
-    except Exception:
-        allowed = False
-
-    if not allowed:
-        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
-        logger.warning(json.dumps({
-            "event": "request.denied",
-            "request_id": request_id,
-            "client_ip": client_ip,
-            "path": str(request.url),
-        }))
-        return JSONResponse({"detail": "IP not allowed", "request_id": request_id}, status_code=403, headers={"X-Request-ID": request_id})
-
-    return await call_next(request)
-
-
-# Authentication middleware: check cookies when REQUIRE_AUTH is enabled
-@app.middleware("http")
-async def auth_middleware(request: StarletteRequest, call_next):
-    """Check authentication cookies when REQUIRE_AUTH=true, except for public paths."""
-    if not REQUIRE_AUTH:
-        return await call_next(request)
-    
-    # Check if path is public
-    path = request.url.path
-    is_public = False
-    for public_path in PUBLIC_PATHS:
-        if path == public_path or path.startswith(public_path + "/"):
-            is_public = True
-            break
-    
-    if is_public:
-        return await call_next(request)
-    
-    # Verify authentication cookie
-    try:
-        from fastapi_app.services.cookie_service import get_cookie_token, create_cookie_token
-        from fastapi_app.services.user_service import USERS_FILE_PATH
-        
-        cookie_token = get_cookie_token(request)
-        if not cookie_token:
-            # Return HTML forbidden page
-            forbidden_path = Path(__file__).resolve().parents[1] / "frontend" / "forbidden.html"
-            if forbidden_path.exists():
-                return FileResponse(str(forbidden_path), status_code=401, media_type="text/html")
-            return JSONResponse({"detail": "Authentication required", "redirect": "/register"}, status_code=401)
-        
-        # Validate cookie against registered users
-        if not os.path.exists(USERS_FILE_PATH):
-            forbidden_path = Path(__file__).resolve().parents[1] / "frontend" / "forbidden.html"
-            if forbidden_path.exists():
-                return FileResponse(str(forbidden_path), status_code=401, media_type="text/html")
-            return JSONResponse({"detail": "Authentication required", "redirect": "/register"}, status_code=401)
-        
-        authenticated = False
-        with open(USERS_FILE_PATH, "r") as file:
-            for line in file:
-                parts = [p.strip() for p in line.split("|")]
-                if len(parts) >= 2:
-                    token = parts[0]
-                    status = parts[1]
-                    if status == "active":
-                        expected_hash = create_cookie_token(token)
-                        if cookie_token == expected_hash:
-                            authenticated = True
-                            break
-        
-        if not authenticated:
-            forbidden_path = Path(__file__).resolve().parents[1] / "frontend" / "forbidden.html"
-            if forbidden_path.exists():
-                return FileResponse(str(forbidden_path), status_code=401, media_type="text/html")
-            return JSONResponse({"detail": "Invalid authentication", "redirect": "/register"}, status_code=401)
-        
-    except Exception as e:
-        logger.error(f"Auth middleware error: {e}")
-        return JSONResponse({"detail": "Authentication error"}, status_code=401)
-    
-    return await call_next(request)
+app.middleware("http")(middleware.ip_whitelist_middleware)
+app.middleware("http")(middleware.auth_middleware)
+app.middleware("http")(middleware.request_logging_middleware)
+app.exception_handler(Exception)(middleware.global_exception_handler)
 
 
 # Mount the frontend directory under /static and serve index.html at root
@@ -247,6 +129,21 @@ if frontend_dir.exists():
             )
         return {"detail": "Frontend index.html not found"}
 
+    @app.get("/logs", include_in_schema=False)
+    async def serve_log_summary():
+        log_summary_path = frontend_dir / "summary.html"
+        if log_summary_path.exists():
+            return FileResponse(
+                str(log_summary_path), 
+                media_type="text/html",
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0"
+                }
+            )
+        return {"detail": "Log summary page not found"}
+
 # Allow CORS from anywhere (change to specific origins for production)
 app.add_middleware(
     CORSMiddleware,
@@ -255,6 +152,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- API Endpoints ---
 
 @app.post("/generate-dxf/")
 async def generate_dxf(
@@ -398,181 +297,6 @@ async def healthcheck():
     return JSONResponse({"status": "ok", "uptime_s": round(uptime, 3)})
 
 
-@app.exception_handler(Exception)
-async def global_exception_handler(request: StarletteRequest, exc: Exception):
-    """Log unhandled exceptions with traceback and return a JSON error including request_id.
-
-    Also write a small per-request error file to fastapi_app/logs/errors/<request_id>.json.
-    """
-    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
-
-    # determine client IP (prefer X-Forwarded-For)
-    xff = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
-    if xff:
-        client_ip = xff.split(",")[0].strip()
-    else:
-        client_ip = request.client.host if request.client else "unknown"
-
-    tb = traceback.format_exc()
-    # Log full exception and context
-    logger.error(json.dumps({
-        "event": "unhandled_exception",
-        "request_id": request_id,
-        "path": str(request.url),
-        "client_ip": client_ip,
-        "exception": str(exc),
-        "traceback": tb,
-    }))
-
-    # write an atomic error file
-    try:
-        err_dir = logs_dir / "errors"
-        err_dir.mkdir(parents=True, exist_ok=True)
-        err_file = err_dir / f"{request_id}.json"
-        payload = {
-            "request_id": request_id,
-            "path": str(request.url),
-            "client_ip": client_ip,
-            "exception": str(exc),
-            "traceback": tb,
-            "timestamp": time.time(),
-        }
-        tmp = err_file.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2)
-        os.replace(tmp, err_file)
-    except Exception:
-        logger.exception("Failed to write error file for request %s", request_id)
-
-    # Return a generic error response with the request id for correlation
-    return JSONResponse({"detail": "Internal Server Error", "request_id": request_id}, status_code=500, headers={"X-Request-ID": request_id})
-
-
-@app.middleware("http")
-async def request_logging_middleware(request: StarletteRequest, call_next):
-    """Log request start/finish, client IP, request id, body preview (skip multipart), and small response preview."""
-    # correlation id
-    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
-    
-    # Store request_id in context variable for use throughout the request
-    request_id_ctx.set(request_id)
-
-    # client IP: prefer X-Forwarded-For
-    xff = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
-    if xff:
-        client_ip = xff.split(",")[0].strip()
-    else:
-        client_ip = request.client.host if request.client else "unknown"
-
-    # user-ident (optional header)
-    user_ident = request.headers.get("x-user-id") or "anonymous"
-
-    # detect file upload by content-type
-    content_type = request.headers.get("content-type", "")
-    is_file_upload = content_type.startswith("multipart/form-data")
-
-    start_time = time.time()
-
-    # read body safely
-    try:
-        raw_body = await request.body()
-    except Exception:
-        raw_body = b""
-
-    if is_file_upload:
-        body_preview = "<file-upload>"
-    else:
-        try:
-            body_text = raw_body.decode("utf-8", errors="replace")
-            body_preview = body_text[:1024]
-        except Exception:
-            body_preview = "<binary>"
-
-    # Decide whether to capture full bodies for request/response
-    should_log_full_request = False
-    ct = content_type or ""
-    try:
-        if FULL_BODY_LOGGING and not is_file_upload and _is_textual_content_type(ct) and len(raw_body) <= MAX_FULL_BODY_BYTES:
-            should_log_full_request = True
-    except Exception:
-        should_log_full_request = False
-
-    logger.info(json.dumps({
-        "event": "request.start",
-        "request_id": request_id,
-        "method": request.method,
-        "path": str(request.url),
-        "client_ip": client_ip,
-        "user": user_ident,
-        "body_preview": body_preview,
-    }))
-
-    # recreate request for downstream since body was consumed
-    async def receive():
-        return {"type": "http.request", "body": raw_body}
-
-    new_request = StarletteRequest(request.scope, receive)
-
-    try:
-        response = await call_next(new_request)
-    except Exception as exc:
-        # log the exception with traceback and re-raise
-        logger.exception("Unhandled exception during request", exc_info=exc)
-        raise
-
-    process_time = time.time() - start_time
-
-    # capture small response preview (be careful with streaming/binary)
-    try:
-        resp_body = b""
-        async for chunk in response.body_iterator:
-            resp_body += chunk
-        # response content-type may be in headers
-        resp_ct = response.headers.get("content-type", "")
-        
-        # Only create preview for text content types, not binary
-        if _is_textual_content_type(resp_ct):
-            resp_text = resp_body.decode("utf-8", errors="replace")[:1024]
-        else:
-            resp_text = f"<binary content: {resp_ct}, {len(resp_body)} bytes>"
-
-        # Decide whether to capture full response body
-        should_log_full_response = False
-        try:
-            if FULL_BODY_LOGGING and _is_textual_content_type(resp_ct) and len(resp_body) <= MAX_FULL_BODY_BYTES:
-                should_log_full_response = True
-        except Exception:
-            should_log_full_response = False
-
-        # rebuild response so the client receives body
-        new_resp = StarletteResponse(content=resp_body, status_code=response.status_code, headers=dict(response.headers), media_type=response.media_type)
-        new_resp.headers["X-Request-ID"] = request_id
-
-        logger.info(json.dumps({
-            "event": "request.finish",
-            "request_id": request_id,
-            "status_code": response.status_code,
-            "process_time_s": round(process_time, 4),
-            "response_preview": resp_text,
-        }))
-
-        return new_resp
-    except Exception:
-        # fallback: cannot capture body (streaming). attach request id header and log status
-        try:
-            response.headers["X-Request-ID"] = request_id
-        except Exception:
-            pass
-        logger.info(json.dumps({
-            "event": "request.finish",
-            "request_id": request_id,
-            "status_code": getattr(response, "status_code", "unknown"),
-            "process_time_s": round(process_time, 4),
-            "response_preview": "<not-captured>",
-        }))
-        return response
-
-
 @app.post("/generate-single-dxf/")
 async def generate_single_dxf(params: DoorDXFRequest = Body(...), save_pdf: bool = Query(False, description="If true, also export and return a PDF instead of DXF")):
     """Generate one DXF from JSON parameters and return the DXF file.
@@ -652,6 +376,110 @@ async def get_dxf_geometry(params: DoorDXFRequest = Body(...)):
         raise HTTPException(status_code=400, detail=str(e))
 
     return schema.dict()
+
+
+@app.get("/api/logs/summary")
+async def get_log_summary():
+    """Parse app.log and return a structured summary of operations."""
+    try:
+        logfile = logs_dir / "app.log"
+        if not logfile.exists():
+            return JSONResponse({
+                "summary": {
+                    "total_requests": 0,
+                    "dxf_files": 0,
+                    "pdf_files": 0,
+                    "bulk_executions": 0,
+                    "server_restarts": 0,
+                    "errors": 0
+                },
+                "file_generations": [],
+                "single_dxf_executions": [],
+                "bulk_executions": []
+            })
+        
+        # Read log file
+        with open(logfile, 'r', encoding='utf-8', errors='ignore') as f:
+            log_lines = f.readlines()
+        
+        # Initialize tracking structures
+        counters = {
+            "total_requests": 0,
+            "dxf_files": 0,
+            "pdf_files": 0,
+            "bulk_executions": 0,
+            "server_restarts": 0,
+            "errors": 0
+        }
+        
+        single_dxf_sessions = {}
+        bulk_sessions = {}
+        all_dxf_files = []
+        
+        # Parse log lines
+        for line in log_lines:
+            try:
+                # Count server restarts and errors
+                if "Started server process" in line:
+                    counters["server_restarts"] += 1
+                
+                if " ERROR " in line and "uvicorn.error" not in line:
+                    counters["errors"] += 1
+                
+                # Parse JSON log entries
+                log_entry = parse_json_log_entry(line)
+                if log_entry:
+                    event = log_entry.get("event")
+                    
+                    if event == "request.start":
+                        process_request_start(log_entry, line, single_dxf_sessions, 
+                                            bulk_sessions, counters)
+                    elif event == "request.finish":
+                        process_request_finish(log_entry, line, single_dxf_sessions, 
+                                             bulk_sessions)
+                
+                # Parse file generation messages
+                if "DXF file" in line and "created successfully" in line:
+                    process_dxf_generation(line, single_dxf_sessions, all_dxf_files, counters)
+                
+                if "Response logged to:" in line and ".dxf_response.json" in line:
+                    process_response_log(line, all_dxf_files)
+                
+                if "PDF file" in line and "created successfully" in line:
+                    process_pdf_generation(line, single_dxf_sessions, counters)
+                
+            except Exception:
+                continue
+        
+        # Build execution lists
+        single_executions, single_files_set = build_single_executions(single_dxf_sessions)
+        
+        associate_bulk_files(all_dxf_files, single_files_set, bulk_sessions)
+        
+        bulk_executions = build_bulk_executions(bulk_sessions)
+        
+        # Combine and sort executions
+        all_executions = single_executions + bulk_executions
+        all_executions.sort(key=lambda x: x["time"], reverse=True)
+        
+        return JSONResponse({
+            "summary": {
+                "total_requests": counters["total_requests"],
+                "dxf_files": counters["dxf_files"],
+                "pdf_files": counters["pdf_files"],
+                "bulk_executions": counters["bulk_executions"],
+                "server_restarts": max(0, counters["server_restarts"] - 1),
+                "errors": counters["errors"]
+            },
+            "file_generations": [],  # Deprecated, kept for backwards compatibility
+            "single_dxf_executions": all_executions[:50],
+            "bulk_executions": []  # Deprecated, kept for backwards compatibility
+        })
+        
+    except Exception as e:
+        logger.error(f"Error parsing log file: {e}")
+        raise HTTPException(status_code=500, detail=f"Error parsing log file: {str(e)}")
+
 
 
 if __name__ == "__main__":

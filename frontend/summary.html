@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DoorApp Log Summary</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #f5f7fa;
+        margin: 0;
+        padding: 20px;
+      }
+      h1 {
+        text-align: center;
+        color: #333;
+      }
+      .card {
+        background: white;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+        margin-bottom: 25px;
+      }
+      .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+      }
+      .stat-box {
+        background: #fff;
+        padding: 20px;
+        border-radius: 12px;
+        text-align: center;
+        font-size: 22px;
+        font-weight: bold;
+        color: #444;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+      }
+      .stat-label {
+        font-size: 14px;
+        color: #777;
+        margin-bottom: 5px;
+        font-weight: normal;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+        background: #fff;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      th,
+      td {
+        padding: 12px 15px;
+        text-align: left;
+      }
+      th {
+        background: #2c3e50;
+        color: white;
+        font-size: 15px;
+      }
+      tr:nth-child(even) {
+        background: #f2f6f9;
+      }
+      tr:hover {
+        background: #e8f0fe;
+      }
+      .loading {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+      }
+      .error {
+        background: #fee;
+        color: #c33;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+      }
+      .refresh-btn {
+        background: #2c3e50;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 14px;
+        float: right;
+      }
+      .refresh-btn:hover {
+        background: #34495e;
+      }
+      .status-success {
+        color: #27ae60;
+        font-weight: bold;
+      }
+      .status-error {
+        color: #e74c3c;
+        font-weight: bold;
+      }
+      .last-updated {
+        text-align: center;
+        color: #777;
+        font-size: 14px;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>DoorApp Log Summary - Dashboard</h1>
+
+    <div class="card">
+      <button class="refresh-btn" onclick="loadLogData()">🔄 Refresh</button>
+      <h2>Summary Overview</h2>
+      <div id="loading" class="loading">Loading log data...</div>
+      <div id="error" class="error" style="display: none"></div>
+      <div id="summary" style="display: none">
+        <div class="stat-grid">
+          <div class="stat-box">
+            <div class="stat-label">Total Requests</div>
+            <div id="stat-total-requests">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">DXF Files Generated</div>
+            <div id="stat-dxf-files">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">PDF Files Generated</div>
+            <div id="stat-pdf-files">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Bulk Executions</div>
+            <div id="stat-bulk-executions">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Server Restarts</div>
+            <div id="stat-server-restarts">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Error Count</div>
+            <div id="stat-errors">0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="file-generation-card" style="display: none">
+      <h2>File Generation Details</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Run</th>
+            <th>Timestamp</th>
+            <th>File Type</th>
+            <th>File Name</th>
+            <th>Status</th>
+            <th>Execution Time</th>
+          </tr>
+        </thead>
+        <tbody id="file-generation-table"></tbody>
+      </table>
+    </div>
+
+    <div class="card" id="bulk-executions-card" style="display: none">
+      <h2>Bulk Executions</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Run</th>
+            <th>Time</th>
+            <th>File Count</th>
+            <th>Files</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="bulk-executions-table"></tbody>
+      </table>
+    </div>
+
+    <div class="last-updated" id="last-updated"></div>
+
+    <script>
+      async function loadLogData() {
+        const loadingEl = document.getElementById("loading");
+        const errorEl = document.getElementById("error");
+        const summaryEl = document.getElementById("summary");
+
+        loadingEl.style.display = "block";
+        errorEl.style.display = "none";
+        summaryEl.style.display = "none";
+
+        try {
+          const response = await fetch("/api/logs/summary");
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          const data = await response.json();
+
+          loadingEl.style.display = "none";
+          summaryEl.style.display = "block";
+
+          // Update summary stats
+          document.getElementById("stat-total-requests").textContent =
+            data.summary.total_requests;
+          document.getElementById("stat-dxf-files").textContent =
+            data.summary.dxf_files;
+          document.getElementById("stat-pdf-files").textContent =
+            data.summary.pdf_files;
+          document.getElementById("stat-bulk-executions").textContent =
+            data.summary.bulk_executions;
+          document.getElementById("stat-server-restarts").textContent =
+            data.summary.server_restarts;
+          document.getElementById("stat-errors").textContent =
+            data.summary.errors;
+
+          // Update file generation table
+          if (data.single_dxf_executions.length > 0) {
+            document.getElementById("file-generation-card").style.display =
+              "block";
+            const tableBody = document.getElementById("file-generation-table");
+            tableBody.innerHTML = "";
+            data.single_dxf_executions.forEach((item, index) => {
+              const runLabel = `Run ${index + 1}`;
+
+              // Check if it's a bulk execution
+              if (item.is_bulk) {
+                // Add a single row for bulk execution showing file count
+                const row = tableBody.insertRow();
+                row.innerHTML = `
+                        <td>${runLabel}</td>
+                        <td>${item.time}</td>
+                        <td>Bulk Execution</td>
+                        <td>${item.file_count} files generated</td>
+                        <td class="${
+                          item.status === "Success"
+                            ? "status-success"
+                            : "status-error"
+                        }">${item.status}</td>
+                        <td>${item.execution_time}</td>
+                    `;
+              } else {
+                // Add DXF file row if it exists
+                if (item.dxf_file && item.dxf_file !== "Not generated") {
+                  const row = tableBody.insertRow();
+                  row.innerHTML = `
+                        <td>${runLabel}</td>
+                        <td>${item.time}</td>
+                        <td>DXF</td>
+                        <td>${item.dxf_file}</td>
+                        <td class="${
+                          item.status === "Success"
+                            ? "status-success"
+                            : "status-error"
+                        }">${item.status}</td>
+                        <td>${item.execution_time}</td>
+                    `;
+                }
+                // Add PDF file row if it exists
+                if (item.pdf_file && item.pdf_file !== "❌ Not requested") {
+                  const row = tableBody.insertRow();
+                  row.innerHTML = `
+                        <td>${runLabel}</td>
+                        <td>${item.time}</td>
+                        <td>PDF</td>
+                        <td>${item.pdf_file}</td>
+                        <td class="${
+                          item.status === "Success"
+                            ? "status-success"
+                            : "status-error"
+                        }">${item.status}</td>
+                        <td>${item.execution_time}</td>
+                    `;
+                }
+              }
+            });
+          }
+
+          // Update bulk executions table
+          if (data.bulk_executions.length > 0) {
+            document.getElementById("bulk-executions-card").style.display =
+              "block";
+            const tableBody = document.getElementById("bulk-executions-table");
+            tableBody.innerHTML = "";
+            data.bulk_executions.forEach((item, index) => {
+              const row = tableBody.insertRow();
+              row.innerHTML = `
+                        <td>Run ${index + 1}</td>
+                        <td>${item.time}</td>
+                        <td>${item.file_count}</td>
+                        <td>${item.files}</td>
+                        <td class="${
+                          item.status === "Success"
+                            ? "status-success"
+                            : "status-error"
+                        }">${item.status}</td>
+                    `;
+            });
+          }
+
+          // Update last updated time
+          const now = new Date();
+          document.getElementById(
+            "last-updated"
+          ).textContent = `Last updated: ${now.toLocaleString()}`;
+        } catch (error) {
+          loadingEl.style.display = "none";
+          errorEl.style.display = "block";
+          errorEl.textContent = `Error loading log data: ${error.message}`;
+        }
+      }
+
+      // Load data on page load
+      loadLogData();
+
+      // Auto-refresh every 30 seconds
+      setInterval(loadLogData, 30000);
+    </script>
+  </body>
+</html>

@@ -159,6 +159,7 @@ def build_single_executions(single_dxf_sessions: dict) -> tuple:
                 single_files_set.add(session["pdf_file"])
             
             executions.append({
+                "request_id": session["request_id"],
                 "time": extract_time_only(session["start_time"]),
                 "dxf_file": session["dxf_file"] or "Not generated",
                 "pdf_file": session["pdf_file"] or "❌ Not requested",
@@ -191,6 +192,7 @@ def build_bulk_executions(bulk_sessions: dict) -> list:
     for session in bulk_sessions.values():
         if session["files"] or session["execution_time"]:
             executions.append({
+                "request_id": session["request_id"],
                 "time": extract_time_only(session["start_time"]),
                 "file_count": len(session["files"]),
                 "files": session["files"],

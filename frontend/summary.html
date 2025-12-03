@@ -106,17 +106,24 @@
         margin-top: 5px;
       }
 
+      .table-wrapper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+
       table {
         width: 100%;
         border-collapse: collapse;
         background: var(--card);
         border-radius: 10px;
         overflow: hidden;
+        min-width: 600px;
       }
 
       th,
       td {
         padding: 10px 12px;
+        white-space: nowrap;
       }
 
       th {
@@ -196,19 +203,21 @@
     </div>
     <div class="collapsible-content" id="file-gen">
       <div class="card">
-        <table>
-          <thead>
-            <tr>
-              <th>Run</th>
-              <th>Time</th>
-              <th>Type</th>
-              <th>Name</th>
-              <th>Status</th>
-              <th>Sec</th>
-            </tr>
-          </thead>
-          <tbody id="file-generation-table"></tbody>
-        </table>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Time</th>
+                <th>Type</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Sec</th>
+              </tr>
+            </thead>
+            <tbody id="file-generation-table"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -259,14 +268,27 @@
           const fileTable = document.getElementById("file-generation-table");
           fileTable.innerHTML = "";
           data.single_dxf_executions.forEach((i, idx) => {
+            // Check if PDF was actually generated (not "❌ Not requested")
+            const hasPdf = i.pdf_file && !i.pdf_file.includes("❌");
+
             const displayName = i.is_bulk
               ? `${i.file_count || 0} files`
-              : i.dxf_file || i.pdf_file || "N/A";
+              : (hasPdf ? i.pdf_file : i.dxf_file) || "N/A";
+
+            let fileType = "";
+            if (i.is_bulk) {
+              fileType = "Bulk";
+            } else if (hasPdf) {
+              fileType = "PDF";
+            } else if (i.dxf_file) {
+              fileType = "DXF";
+            }
+
             fileTable.innerHTML += `
         <tr>
           <td>Run ${idx + 1}</td>
           <td>${i.time}</td>
-          <td>${i.is_bulk ? "Bulk" : i.dxf_file ? "DXF/PDF" : ""}</td>
+          <td>${fileType}</td>
           <td>${displayName}</td>
           <td class="${
             i.status === "Success" ? "status-success" : "status-error"

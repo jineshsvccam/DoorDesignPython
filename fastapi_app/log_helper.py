@@ -54,11 +54,13 @@ def process_request_start(log_entry: dict, line: str, single_dxf_sessions: dict,
     request_id = log_entry.get("request_id")
     path = log_entry.get("path", "")
     timestamp = log_entry.get("timestamp") or extract_timestamp(line)
+    user = log_entry.get("user", "anonymous")
     
     if "/generate-single-dxf" in path:
         counters["total_requests"] += 1
         single_dxf_sessions[request_id] = {
             "request_id": request_id,
+            "user": user,
             "start_time": timestamp,
             "dxf_file": None,
             "pdf_file": None,
@@ -70,6 +72,7 @@ def process_request_start(log_entry: dict, line: str, single_dxf_sessions: dict,
         counters["bulk_executions"] += 1
         bulk_sessions[request_id] = {
             "request_id": request_id,
+            "user": user,
             "start_time": timestamp,
             "end_time": None,
             "files": [],
@@ -160,6 +163,7 @@ def build_single_executions(single_dxf_sessions: dict) -> tuple:
             
             executions.append({
                 "request_id": session["request_id"],
+                "user": session.get("user", "anonymous"),
                 "time": extract_time_only(session["start_time"]),
                 "dxf_file": session["dxf_file"] or "Not generated",
                 "pdf_file": session["pdf_file"] or "❌ Not requested",
@@ -193,6 +197,7 @@ def build_bulk_executions(bulk_sessions: dict) -> list:
         if session["files"] or session["execution_time"]:
             executions.append({
                 "request_id": session["request_id"],
+                "user": session.get("user", "anonymous"),
                 "time": extract_time_only(session["start_time"]),
                 "file_count": len(session["files"]),
                 "files": session["files"],

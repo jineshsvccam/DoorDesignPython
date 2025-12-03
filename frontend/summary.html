@@ -208,6 +208,7 @@
             <thead>
               <tr>
                 <th>Run</th>
+                <th>User</th>
                 <th>Time</th>
                 <th>Type</th>
                 <th>Name</th>
@@ -287,6 +288,7 @@
             fileTable.innerHTML += `
         <tr>
           <td>Run ${idx + 1}</td>
+          <td>${i.user || "anonymous"}</td>
           <td>${i.time}</td>
           <td>${fileType}</td>
           <td>${displayName}</td>

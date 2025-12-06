@@ -7,6 +7,9 @@ Uses pandas to read Excel and DoorDrawingGenerator.generate_door_dxf for DXF cre
 """
 import pandas as pd
 from DoorDrawingGenerator import DoorDrawingGenerator
+import logging
+
+logger = logging.getLogger(__name__)
 
 EXCEL_FILE = "frontend/sample_door_template.xlsm"
 FIXED_PARAMS = {
@@ -34,10 +37,16 @@ def process_bins(rectangles, door_params_list, sheet_width: int = 1250, sheet_he
     from DoorRectPack import pack_rectangles
     from visualize_utils import visualize_placements
 
+    logger.info(f"process_bins called with {len(rectangles)} rectangles")
+    logger.info(f"Sheet size: {sheet_width}x{sheet_height}mm, annotation_required={isannotationRequired}")
+
     bins = pack_rectangles(rectangles, sheet_width=sheet_width, sheet_height=sheet_height)
 
+    logger.info(f"pack_rectangles returned {len(bins)} bins")
+    
     # Flatten all placements for visualization
     all_placements = [p for bin_data in bins for p in bin_data["placements"]]
+    logger.info(f"Total placements across all bins: {len(all_placements)}")
     # Uncomment to visualize placements during development
     #visualize_placements(all_placements, sheet_width=sheet_width, sheet_height=sheet_height)
 
@@ -49,6 +58,8 @@ def process_bins(rectangles, door_params_list, sheet_width: int = 1250, sheet_he
         door_params_list,
         isannotationRequired=isannotationRequired,
     )
+    
+    logger.info(f"Generated ZIP archive at: {zip_path}")
 
     return bins, zip_path
 

@@ -26,18 +26,29 @@ def convert_to_ist(timestamp_str: str) -> str:
         Timestamp string converted to IST timezone
     """
     try:
-        # Try parsing common formats
+        # Check if already an ISO format with timezone (from JSON logs)
+        if "T" in timestamp_str and ("+" in timestamp_str or "Z" in timestamp_str):
+            # Already has timezone info, parse and convert
+            for fmt in ["%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ"]:
+                try:
+                    if timestamp_str.endswith("Z"):
+                        dt = datetime.strptime(timestamp_str, fmt).replace(tzinfo=timezone.utc)
+                    else:
+                        dt = datetime.strptime(timestamp_str, fmt)
+                    dt_ist = dt.astimezone(IST)
+                    return dt_ist.strftime("%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    continue
+        
+        # Parse standard log formats (assume these are UTC from the server)
         for fmt in [
             "%Y-%m-%d %H:%M:%S,%f",  # With milliseconds
             "%Y-%m-%d %H:%M:%S",      # Without milliseconds
-            "%Y-%m-%dT%H:%M:%S.%f%z", # ISO format with timezone
-            "%Y-%m-%dT%H:%M:%S%z",    # ISO format without microseconds
         ]:
             try:
                 dt = datetime.strptime(timestamp_str.strip(), fmt)
-                # If no timezone info, assume UTC
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
+                # Assume UTC timezone for server logs
+                dt = dt.replace(tzinfo=timezone.utc)
                 # Convert to IST
                 dt_ist = dt.astimezone(IST)
                 return dt_ist.strftime("%Y-%m-%d %H:%M:%S")

@@ -224,13 +224,10 @@ def build_single_executions(single_dxf_sessions: dict) -> tuple:
             if session["pdf_file"]:
                 single_files_set.add(session["pdf_file"])
             
-            # Convert start_time to IST if not already converted
-            ist_timestamp = convert_to_ist(session["start_time"]) if session["start_time"] else "N/A"
-            
             executions.append({
                 "request_id": session["request_id"],
                 "user": session.get("user", "anonymous"),
-                "time": ist_timestamp,
+                "time": session["start_time"],
                 "dxf_file": session["dxf_file"] or "Not generated",
                 "pdf_file": session["pdf_file"] or "❌ Not requested",
                 "status": session["status"],
@@ -261,13 +258,10 @@ def build_bulk_executions(bulk_sessions: dict) -> list:
     
     for session in bulk_sessions.values():
         if session["files"] or session["execution_time"]:
-            # Convert start_time to IST if not already converted
-            ist_timestamp = convert_to_ist(session["start_time"]) if session["start_time"] else "N/A"
-            
             executions.append({
                 "request_id": session["request_id"],
                 "user": session.get("user", "anonymous"),
-                "time": ist_timestamp,
+                "time": session["start_time"],
                 "file_count": len(session["files"]),
                 "files": session["files"],
                 "status": session["status"],

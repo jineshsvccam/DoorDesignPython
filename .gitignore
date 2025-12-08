@@ -48,3 +48,4 @@ temp/
 node_modules/
 /Door TestCases/validation_summary.json
 /output_bins.zip
+packing_debug.log

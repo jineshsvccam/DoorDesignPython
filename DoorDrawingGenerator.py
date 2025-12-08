@@ -189,7 +189,6 @@ class DoorDrawingGenerator:
                 return
 
             passed = bool(validate_schema(schema))
-            passed = True  # TEMP OVERRIDE FOR TESTING ONLY
         except Exception as e:
             try:
                 import traceback as tb
@@ -200,6 +199,7 @@ class DoorDrawingGenerator:
             return
 
         if not passed:
+            logger.error("Validation failed - aborting DXF generation")
             return
 
         # Create DXF document and modelspace if not provided

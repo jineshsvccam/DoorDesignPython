@@ -1,4 +1,5 @@
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -7,6 +8,10 @@ from typing import Any, Dict, List, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi_app.schemas_input import DefaultInfo
+
+# Configure logger for validator
+logger = logging.getLogger("validator")
+logger.setLevel(logging.DEBUG)
 
 # Single source of truth for all constants
 _DEFAULTS = DefaultInfo()
@@ -496,31 +501,54 @@ def validate_schema(schema) -> bool:
     """Validate a schema (dict or Pydantic model) and return pass/fail.
     
     Automatically adjusts for rotation if needed. Returns True if all
-    validation checks pass, False otherwise. Prints detailed results on failure.
+    validation checks pass, False otherwise. Logs detailed results on failure.
     """
     # Convert Pydantic models to plain dict if necessary
     try:
         data = schema.dict() if hasattr(schema, "dict") else dict(schema)
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to convert schema to dict: {e}")
+        print(json.dumps({"validation": {"error": "schema_conversion_failed", "details": str(e)}}, indent=2))
         data = schema
+
+    # Log basic door info
+    door_category = data.get("door_category", "Unknown")
+    door_type = data.get("door_type", "Unknown")
+    door_option = data.get("option", "N/A")
+    logger.info(f"Validating {door_category} {door_type} door (option: {door_option})")
 
     # Adjust for rotation if needed
     try:
         data = adjust_for_rotation(data)
-    except Exception:
-        print(json.dumps({"validation": {"error": "rotation_adjustment_failed"}}, indent=2))
+        if data.get("metadata", {}).get("rotated", False):
+            logger.debug("Schema adjusted for rotation")
+    except Exception as e:
+        logger.error(f"Rotation adjustment failed: {e}")
+        print(json.dumps({"validation": {"error": "rotation_adjustment_failed", "details": str(e)}}, indent=2))
         return False
 
     # Run appropriate validator
-    result = validate_double_door(data) if data.get("door_category") == "Double" else validate_single_door(data)
+    try:
+        result = validate_double_door(data) if data.get("door_category") == "Double" else validate_single_door(data)
+        logger.debug(f"Validation result keys: {list(result.keys())}")
+    except Exception as e:
+        logger.error(f"Validation execution failed: {e}")
+        logger.exception("Validation exception details:")
+        print(json.dumps({"validation": {"error": "validation_execution_failed", "details": str(e)}}, indent=2))
+        return False
 
     # Determine pass/fail from validation flags
     flags = _collect_valid_flags(result)
     passed = all(flags) if flags else result.get("is_single_door") or result.get("is_double_door") or False
 
-    # Print detailed results on failure
+    # Log detailed results on failure
     if not passed:
+        logger.warning(f"Validation FAILED for {door_category} {door_type} door")
+        logger.warning(f"Validation flags collected: {flags}")
+        logger.warning(f"Failed checks: {json.dumps(result, indent=2)}")
         print(json.dumps({"validation": result}, indent=2))
+    else:
+        logger.info(f"Validation PASSED for {door_category} {door_type} door")
 
     return passed
 

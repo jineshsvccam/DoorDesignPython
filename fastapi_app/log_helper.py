@@ -8,14 +8,66 @@ application logs to extract execution summaries and file generation statistics.
 import json
 import os
 import re
+from datetime import datetime, timezone, timedelta
 from typing import Optional
+
+# Indian Standard Time (IST) is UTC+5:30
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def convert_to_ist(timestamp_str: str) -> str:
+    """
+    Convert a timestamp string to IST timezone.
+    
+    Args:
+        timestamp_str: Timestamp in format "YYYY-MM-DD HH:MM:SS" or similar
+        
+    Returns:
+        Timestamp string converted to IST timezone
+    """
+    try:
+        # Try parsing common formats
+        for fmt in [
+            "%Y-%m-%d %H:%M:%S,%f",  # With milliseconds
+            "%Y-%m-%d %H:%M:%S",      # Without milliseconds
+            "%Y-%m-%dT%H:%M:%S.%f%z", # ISO format with timezone
+            "%Y-%m-%dT%H:%M:%S%z",    # ISO format without microseconds
+        ]:
+            try:
+                dt = datetime.strptime(timestamp_str.strip(), fmt)
+                # If no timezone info, assume UTC
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                # Convert to IST
+                dt_ist = dt.astimezone(IST)
+                return dt_ist.strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                continue
+        
+        # If all formats fail, return original
+        return timestamp_str
+    except Exception:
+        return timestamp_str
+
+
+def get_current_ist_timestamp() -> str:
+    """Return current timestamp in IST timezone as ISO format string."""
+    return datetime.now(IST).isoformat()
 
 
 def extract_timestamp(line: str) -> str:
-    """Extract timestamp from log line (first 19 characters for YYYY-MM-DD HH:MM:SS)."""
+    """Extract timestamp from log line and convert to IST."""
     # Handle both formats: "2025-12-01 11:18:23" and "2025-12-01 11:18:23,123456"
-    # Extract first 19 chars which gives us "YYYY-MM-DD HH:MM:SS"
-    return line[:19] if len(line) >= 19 else line
+    # Extract first 23 chars to get "YYYY-MM-DD HH:MM:SS,ms" if available
+    if len(line) >= 23:
+        timestamp_str = line[:23]
+    elif len(line) >= 19:
+        timestamp_str = line[:19]
+    else:
+        return line
+    
+    # Convert to IST
+    return convert_to_ist(timestamp_str)
 
 
 def extract_time_only(timestamp: str) -> str:
@@ -161,10 +213,13 @@ def build_single_executions(single_dxf_sessions: dict) -> tuple:
             if session["pdf_file"]:
                 single_files_set.add(session["pdf_file"])
             
+            # Convert start_time to IST if not already converted
+            ist_timestamp = convert_to_ist(session["start_time"]) if session["start_time"] else "N/A"
+            
             executions.append({
                 "request_id": session["request_id"],
                 "user": session.get("user", "anonymous"),
-                "time": extract_time_only(session["start_time"]),
+                "time": ist_timestamp,
                 "dxf_file": session["dxf_file"] or "Not generated",
                 "pdf_file": session["pdf_file"] or "❌ Not requested",
                 "status": session["status"],
@@ -195,10 +250,13 @@ def build_bulk_executions(bulk_sessions: dict) -> list:
     
     for session in bulk_sessions.values():
         if session["files"] or session["execution_time"]:
+            # Convert start_time to IST if not already converted
+            ist_timestamp = convert_to_ist(session["start_time"]) if session["start_time"] else "N/A"
+            
             executions.append({
                 "request_id": session["request_id"],
                 "user": session.get("user", "anonymous"),
-                "time": extract_time_only(session["start_time"]),
+                "time": ist_timestamp,
                 "file_count": len(session["files"]),
                 "files": session["files"],
                 "status": session["status"],

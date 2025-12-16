@@ -714,6 +714,9 @@ form.addEventListener("submit", async (e) => {
     if (sheetSize && sheetSize.value) {
       formData.append("sheet_size", sheetSize.value);
     }
+    // include annotation and pdf generation flags
+    formData.append("annotation_required", "false");
+    formData.append("pdf_required", "true");
 
     try {
       const response = await fetch("/generate-dxf/", {

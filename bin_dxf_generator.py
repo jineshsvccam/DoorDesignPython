@@ -268,13 +268,13 @@ def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isa
     else:
         print("[INFO] PDF generation skipped (ispdfrequired=False)")
 
-    # Create ZIP archive containing only .dxf files from the output directory
+    # Create ZIP archive containing .dxf and .pdf files from the output directory
     zip_path = os.path.join(script_dir, "output_bins.zip")
     try:
         with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
             for root, _, files in os.walk(output_dir):
                 for f in files:
-                    if f.lower().endswith('.dxf'):
+                    if f.lower().endswith(('.dxf', '.pdf')):
                         full = os.path.join(root, f)
                         # store files with a relative path inside the archive
                         arcname = os.path.relpath(full, output_dir)

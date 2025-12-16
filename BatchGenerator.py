@@ -76,7 +76,7 @@ class BatchGenerator:
 
         return json_paths
 
-    def generate_dxf_for_bin_json(self, json_path: str, isannotationRequired: bool = False) -> Optional[str]:
+    def generate_dxf_for_bin_json(self, json_path: str, isannotationRequired: bool = True) -> Optional[str]:
         """Read a bin JSON, reconstruct DoorDXFRequest objects and generate a DXF for the bin.
 
         Returns the generated DXF file path or None on failure.

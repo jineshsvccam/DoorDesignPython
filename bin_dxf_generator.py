@@ -213,7 +213,7 @@ def generate_bin_dxf(sheet_w, sheet_h, doors_for_generator, placements, out_dxf,
     print(f" Bin DXF file '{out_dxf}' created successfully.")
 
 
-def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isannotationRequired=True):
+def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isannotationRequired=True, ispdfrequired=True):
    
     script_dir = os.path.dirname(os.path.abspath(__file__))
     output_dir = os.path.join(script_dir, 'outputBulk')
@@ -243,6 +243,30 @@ def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isa
             print(f"Bin {i+1} DXF generated: {dxf_path}")
         else:
             print(f"Bin {i+1} DXF generation failed for manifest: {json_path}")
+
+    # Generate merged PDF from all DXF files (if required)
+    if ispdfrequired:
+        merged_pdf_path = os.path.join(output_dir, "output_bins_merged.pdf")
+        print("[INFO] Starting PDF generation and merging...")
+        try:
+            from tools.merge_dxf_to_pdf import convert_and_merge_dxf_directory
+            
+            pdf_result = convert_and_merge_dxf_directory(
+                dxf_directory=output_dir,
+                output_pdf_path=merged_pdf_path,
+                page_size_mm=(sheet_width, sheet_height),
+                margin_mm=10.0                
+            )
+            
+            if pdf_result:
+                print(f"[SUCCESS] Merged PDF created: {pdf_result}")
+            else:
+                print("[WARN] Failed to create merged PDF")
+        except Exception as e:
+            print(f"[ERROR] PDF generation failed: {e}")
+            merged_pdf_path = None
+    else:
+        print("[INFO] PDF generation skipped (ispdfrequired=False)")
 
     # Create ZIP archive containing only .dxf files from the output directory
     zip_path = os.path.join(script_dir, "output_bins.zip")

@@ -119,41 +119,64 @@ def get_door_rectangles(df, fixed_params):
         except Exception:
             continue  # Skip if dimensions are invalid
 
-        inner_width = float(params["inner_width"])
-        inner_height = float(params["inner_height"])
-        is_double = bool(params["is_double"])
-        bending_w = float(params["bending_width_double_door"] if is_double else params["bending_width"])
-        bending_h = float(params["bending_height"])
-        bend_adjust = float(params["bend_adjust"])
+        inner_width = float(params["inner_width"]) 
+        inner_height = float(params["inner_height"]) 
+        is_double = bool(params["is_double"]) 
+        bending_w = float(params["bending_width_double_door"] if is_double else params["bending_width"]) 
+        bending_h = float(params["bending_height"]) 
+        bend_adjust = float(params["bend_adjust"]) 
         double_gap = float(params.get("gap", 0.0))  # 3mm for double doors, 0 for single
 
         # ------------------------------------------------------------------------
-        # 5. Calculate Outer Bounding Box for Packing
+        # 5. Calculate bounding box used for packing
         # ------------------------------------------------------------------------
-        # Problem: Inner frame extends below outer frame by (bend_adjust - bending_h)
-        #   Example: bend_adjust=12mm, bending_h=24mm → inner_offset_y = -12mm
-        #   When apply_transform normalizes geometry to Y=0, it shifts everything up by 12mm
-        #   So packing dimensions must account for this extra 12mm height
-        #
-        # Solution: Calculate adjustment = abs(min(0, inner_offset_y))
-        #   Then multiply by 2 to handle rectpack rotation (width ↔ height swap)
-        #
-        # Formula breakdown:
-        #   outer_width  = inner_width + bending_w + double_gap + adjustment + extra_spacing
-        #   outer_height = inner_height + bending_h + adjustment + extra_spacing
-        #
-        # Where:
-        #   - inner_width: Already accounts for double_door_gap subtraction (for leaf calc)
-        #   - double_gap: Add back for double doors (3mm gap needs space in bounding box)
-        #   - adjustment: Compensates for inner frame negative Y offset (24mm when doubled)
-        #   - extra_spacing: Direct control of cutting clearance gap (5mm = 5mm gap)
-        
-        inner_offset_y = bend_adjust - bending_h
-        adjustment = abs(min(0.0, inner_offset_y)) * 2
-        extra_y_spacing = 5  # mm - controls gap between door cutting boundaries
-        
-        outer_width = inner_width + bending_w + double_gap + adjustment + extra_y_spacing
-        outer_height = inner_height + bending_h + adjustment + extra_y_spacing
+        # Compute the rectangle size used by the packer from the actual
+        # frame geometry so placements match the drawn DXF. The algorithm:
+        #  - Determine `extra_spacing` (gap) from, in order: request.defaults,
+        #    fixed_params, or fallback to 5.0 mm.
+        #  - Build the base frames using `create_base_frames(params)` and
+        #    compute the tight bounding box with `compute_frame_dimensions(..)`.
+        #  - Include both outer/inner and left_outer/left_inner polygons so
+        #    any inner-frame extension is accounted for.
+        #  - If geometry helpers fail, fall back to the previous heuristic.
+        #  - Finally add `extra_spacing` to width/height to produce
+        #    `outer_width`/`outer_height` used by the packer.
+
+        # determine extra spacing safely
+        try:
+            val = getattr(request.defaults, "extra_spacing", None)
+            if val is not None:
+                extra_spacing = float(val)
+            else:
+                fp_val = fixed_params.get("extra_spacing", None)
+                extra_spacing = float(fp_val) if fp_val is not None else 5.0
+        except Exception:
+            extra_spacing = 5.0
+
+        # compute bbox from frame geometry
+        try:
+            from geometry.create_base_frames import create_base_frames
+            from geometry.utilis import compute_frame_dimensions
+
+            frames_for_bbox = create_base_frames(params)
+            pts = []
+            for key in ("outer", "inner", "left_outer", "left_inner"):
+                poly = frames_for_bbox.get(key)
+                if isinstance(poly, (list, tuple)):
+                    pts.extend(poly)
+
+            if pts:
+                bbox_w, bbox_h = compute_frame_dimensions(pts)
+            else:
+                # heuristic fallback
+                bbox_w = inner_width + bending_w + double_gap
+                bbox_h = inner_height + bending_h
+        except Exception:
+            bbox_w = inner_width + bending_w + double_gap
+            bbox_h = inner_height + bending_h
+
+        outer_width = bbox_w + extra_spacing
+        outer_height = bbox_h + extra_spacing
 
         rectangles.append((outer_width, outer_height, file_name))
 

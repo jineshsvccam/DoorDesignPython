@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def pack_rectangles(rectangles, sheet_width, sheet_height):
     from rectpack import newPacker
-    gap = 10  # mm, change as needed
+    gap = 0  # mm - gap is already included in rectangle dimensions from door_utils.py
     
     logger.info(f"=== PACKING START ===")
     logger.info(f"Sheet dimensions: {sheet_width}x{sheet_height}mm")

@@ -188,8 +188,50 @@ class DoorDrawingGenerator:
                 logger.error("Validator not available; aborting DXF generation to avoid unsafe output.")
                 return
 
-            passed = bool(validate_schema(schema))
-            passed = True  # TEMP OVERRIDE FOR TESTING ONLY
+            # Apply inverse rotation if schema is rotated (validator expects non-rotated geometry)
+            import copy
+            schema_for_validation = copy.deepcopy(schema)
+            if schema_for_validation.metadata.rotated:
+                geom = schema_for_validation.geometry
+                outer_height_orig = schema_for_validation.metadata.width
+                
+                # Collect all points for translation calculation
+                all_pts = []
+                for frame in geom.frames:
+                    all_pts.extend(frame.points)
+                for cutout in geom.cutouts:
+                    all_pts.extend(cutout.points)
+                for hole in geom.holes:
+                    all_pts.append(hole.center)
+                
+                if all_pts:
+                    min_x = min(p[0] for p in all_pts)
+                    min_y = min(p[1] for p in all_pts)
+                    translate_x = min_x
+                    translate_y = min_y
+                    
+                    def inverse_rotate(pt):
+                        x_rot = pt[0] - translate_x
+                        y_rot = pt[1] - translate_y
+                        return (y_rot, outer_height_orig - x_rot)
+                    
+                    # Apply inverse rotation to all geometry
+                    for frame in geom.frames:
+                        frame.points = [inverse_rotate(p) for p in frame.points]
+                    for cutout in geom.cutouts:
+                        cutout.points = [inverse_rotate(p) for p in cutout.points]
+                    for hole in geom.holes:
+                        hole.center = inverse_rotate(hole.center)
+                    
+                    # Swap width and height back
+                    orig_width = schema_for_validation.metadata.width
+                    orig_height = schema_for_validation.metadata.height
+                    schema_for_validation.metadata.width = orig_height
+                    schema_for_validation.metadata.height = orig_width
+                    schema_for_validation.metadata.rotated = False
+
+            validation_result = validate_schema(schema_for_validation)
+            passed = bool(validation_result)
         except Exception as e:
             try:
                 import traceback as tb
@@ -201,6 +243,17 @@ class DoorDrawingGenerator:
 
         if not passed:
             logger.error("Validation failed - aborting DXF generation")
+            try:
+                # Log detailed validation results
+                validation_details = {
+                    "door_label": schema.metadata.label if hasattr(schema.metadata, "label") else "unknown",
+                    "file_name": schema.metadata.file_name if hasattr(schema.metadata, "file_name") else "unknown",
+                    "rotated": schema.metadata.rotated if hasattr(schema.metadata, "rotated") else False,
+                    "validation_result": validation_result if isinstance(validation_result, dict) else {"passed": False}
+                }
+                logger.error(f"Validation failure details: {json.dumps(validation_details, indent=2, default=str)}")
+            except Exception as log_err:
+                logger.error(f"Could not serialize validation details: {log_err}")
             return
 
         # Create DXF document and modelspace if not provided

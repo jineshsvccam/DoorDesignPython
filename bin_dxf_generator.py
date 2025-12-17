@@ -8,6 +8,7 @@ from geometry.door_geometry import compute_door_geometry
 from fastapi_app.schemas_output import BinDoor, BinManifest, BinDoorTransformed, BinTransformedManifest
 from fastapi_app.schemas_input import DoorDXFRequest
 from BatchGenerator import BatchGenerator
+from tools.validate_transformed_batch import validate_single_transformed_file
 
 
 def _normalize_request_dict(req):
@@ -236,6 +237,21 @@ def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isa
 
     for i, bin_data in enumerate(bins):
         json_path, transformed_manifest = create_and_write_bin_manifest(i, bin_data, door_params_list, sheet_width, sheet_height, output_dir)
+
+        # Validate the transformed manifest before DXF generation
+        print(f"\n[VALIDATION] Validating bin {i+1} manifest before DXF generation...")
+        validation_result = validate_single_transformed_file(json_path)
+        
+        if validation_result.get("fail_count", 0) > 0:
+            print(f"[WARN] Bin {i+1} has {validation_result['fail_count']} validation failures out of {validation_result['door_count']} doors")
+            # Optional: save validation report for this bin
+            validation_path = Path(json_path).with_name(f"bin_{i+1}_validation.json")
+            import json
+            with open(validation_path, 'w') as f:
+                json.dump(validation_result, f, indent=2)
+            print(f"[INFO] Validation report saved: {validation_path}")
+        else:
+            print(f"[SUCCESS] Bin {i+1} validation passed for all {validation_result['door_count']} doors")
 
         dxf_path = bg.generate_dxf_for_bin_json(json_path, isannotationRequired=isannotationRequired)
         if dxf_path:

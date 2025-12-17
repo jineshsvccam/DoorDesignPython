@@ -230,7 +230,11 @@ def _validate_handle(cutout_points, outer, inner, handle_name="center_handle", i
 
 def _validate_single_glass_cutout(cutout_points: List[Tuple[float, float]], outer: Dict[str, Any], inner: Dict[str, Any], 
                                   outer_h: float, option: str, is_double_door: bool = False) -> Dict[str, Any]:
-    """Validate a single glass cutout with fire door margins."""
+    """Validate a single glass cutout with fire door margins.
+    
+    For narrow double door leaves (< double_door_minimum_width), uses fire_glass_lr_margin_small
+    instead of fire_glass_lr_margin to match geometry generation logic.
+    """
     outer_left, outer_right, outer_bottom, outer_top = get_frame_bounds(outer)
     inner_left, inner_right, inner_bottom, inner_top = get_frame_bounds(inner)
     
@@ -245,7 +249,16 @@ def _validate_single_glass_cutout(cutout_points: List[Tuple[float, float]], oute
     outer_center_y = outer_h / 2
 
     expected_top_gap = _DEFAULTS.fire_glass_top_margin_double if is_double_door else _DEFAULTS.fire_glass_top_margin
-    lr_valid = abs(left_gap - _DEFAULTS.fire_glass_lr_margin) < 1 and abs(right_gap - _DEFAULTS.fire_glass_lr_margin) < 1
+    
+    # For double doors with narrow leaves, use smaller LR margin
+    # This matches the logic in generate_cutouts.py
+    inner_width = inner_right - inner_left
+    if is_double_door and inner_width < _DEFAULTS.double_door_minimum_width:
+        expected_lr_margin = _DEFAULTS.fire_glass_lr_margin_small
+    else:
+        expected_lr_margin = _DEFAULTS.fire_glass_lr_margin
+    
+    lr_valid = abs(left_gap - expected_lr_margin) < 1 and abs(right_gap - expected_lr_margin) < 1
 
     # Standard fire glass validation for different options
     if option in ("option1", "option4"):

@@ -29,7 +29,7 @@ def process_excel(excel_file: str, fixed_params: dict):
     return get_door_rectangles(df, fixed_params)
 
 
-def process_bins(rectangles, door_params_list, sheet_width: int = 1250, sheet_height: int = 2500, isannotationRequired: bool = False):
+def process_bins(rectangles, door_params_list, sheet_width: int = 1250, sheet_height: int = 2500, isannotationRequired: bool = True, ispdfrequired: bool = True):
     """Pack rectangles into sheets, (optionally) visualize placements, and generate DXF files.
 
     Returns the list of bins produced by the packing algorithm.
@@ -38,7 +38,7 @@ def process_bins(rectangles, door_params_list, sheet_width: int = 1250, sheet_he
     from visualize_utils import visualize_placements
 
     logger.info(f"process_bins called with {len(rectangles)} rectangles")
-    logger.info(f"Sheet size: {sheet_width}x{sheet_height}mm, annotation_required={isannotationRequired}")
+    logger.info(f"Sheet size: {sheet_width}x{sheet_height}mm, annotation_required={isannotationRequired}, pdf_required={ispdfrequired}")
 
     bins = pack_rectangles(rectangles, sheet_width=sheet_width, sheet_height=sheet_height)
 
@@ -57,6 +57,7 @@ def process_bins(rectangles, door_params_list, sheet_width: int = 1250, sheet_he
         bins,
         door_params_list,
         isannotationRequired=isannotationRequired,
+        ispdfrequired=ispdfrequired,
     )
     
     logger.info(f"Generated ZIP archive at: {zip_path}")
@@ -64,13 +65,13 @@ def process_bins(rectangles, door_params_list, sheet_width: int = 1250, sheet_he
     return bins, zip_path
 
 
-def generate_zip_from_excel(excel_file: str, fixed_params: dict = FIXED_PARAMS, sheet_width: int = 1250, sheet_height: int = 2500, isannotationRequired: bool = False):
+def generate_zip_from_excel(excel_file: str, fixed_params: dict = FIXED_PARAMS, sheet_width: int = 1250, sheet_height: int = 2500, isannotationRequired: bool = True, ispdfrequired: bool = True):
     """High-level helper that processes an Excel file, packs rectangles, generates DXFs, and returns the ZIP path.
 
     This is suitable for calling from a service: pass the Excel file path and receive the path to the ZIP archive containing generated DXFs.
     """
     rectangles, door_params_list = process_excel(excel_file, fixed_params)
-    _, zip_path = process_bins(rectangles, door_params_list, sheet_width=sheet_width, sheet_height=sheet_height, isannotationRequired=isannotationRequired)
+    _, zip_path = process_bins(rectangles, door_params_list, sheet_width=sheet_width, sheet_height=sheet_height, isannotationRequired=isannotationRequired, ispdfrequired=ispdfrequired)
     return zip_path
 
 def main():

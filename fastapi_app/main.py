@@ -159,11 +159,16 @@ app.add_middleware(
 async def generate_dxf(
     file: UploadFile = File(...),
     sheet_size: Optional[str] = Form("1250x2500"),
+    annotation_required: Optional[bool] = Form(True, description="Include annotations in DXF output"),
+    pdf_required: Optional[bool] = Form(True, description="Generate merged PDF of all bins"),
 ):
-    """Accept an uploaded Excel file and an optional sheet_size form field.
+    """Accept an uploaded Excel file and optional parameters.
 
-    `sheet_size` should be of the form WIDTHxHEIGHT (e.g. 1250x2500). If the
-    value is missing or cannot be parsed, defaults of 1250x2500 are used.
+    Args:
+        file: Excel file containing door specifications
+        sheet_size: Sheet dimensions as WIDTHxHEIGHT (e.g. 1250x2500). Defaults to 1250x2500
+        annotation_required: Whether to include annotations in generated DXF files. Defaults to True
+        pdf_required: Whether to generate a merged PDF of all bins. Defaults to True
     """
     # Save uploaded Excel temporarily. Use the uploaded filename's suffix when available
     suffix = Path(file.filename).suffix if file.filename else ".xlsx"
@@ -189,7 +194,13 @@ async def generate_dxf(
                     pass
 
         # Call your existing helper that generates the ZIP
-        zip_path = generate_zip_from_excel(excel_path, sheet_width=width, sheet_height=height)
+        zip_path = generate_zip_from_excel(
+            excel_path, 
+            sheet_width=width, 
+            sheet_height=height, 
+            isannotationRequired=annotation_required if annotation_required is not None else True,
+            ispdfrequired=pdf_required if pdf_required is not None else True
+        )
         if not zip_path or not os.path.exists(zip_path):
             raise HTTPException(status_code=500, detail="Failed to generate DXF ZIP archive")
 

@@ -8,6 +8,7 @@ from geometry.door_geometry import compute_door_geometry
 from fastapi_app.schemas_output import BinDoor, BinManifest, BinDoorTransformed, BinTransformedManifest
 from fastapi_app.schemas_input import DoorDXFRequest
 from BatchGenerator import BatchGenerator
+from tools.validate_transformed_batch import validate_single_transformed_file
 
 
 def _normalize_request_dict(req):
@@ -213,7 +214,7 @@ def generate_bin_dxf(sheet_w, sheet_h, doors_for_generator, placements, out_dxf,
     print(f" Bin DXF file '{out_dxf}' created successfully.")
 
 
-def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isannotationRequired=True):
+def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isannotationRequired=True, ispdfrequired=True):
    
     script_dir = os.path.dirname(os.path.abspath(__file__))
     output_dir = os.path.join(script_dir, 'outputBulk')
@@ -237,6 +238,21 @@ def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isa
     for i, bin_data in enumerate(bins):
         json_path, transformed_manifest = create_and_write_bin_manifest(i, bin_data, door_params_list, sheet_width, sheet_height, output_dir)
 
+        # Validate the transformed manifest before DXF generation
+        print(f"\n[VALIDATION] Validating bin {i+1} manifest before DXF generation...")
+        validation_result = validate_single_transformed_file(json_path)
+        
+        if validation_result.get("fail_count", 0) > 0:
+            print(f"[WARN] Bin {i+1} has {validation_result['fail_count']} validation failures out of {validation_result['door_count']} doors")
+            # Optional: save validation report for this bin
+            validation_path = Path(json_path).with_name(f"bin_{i+1}_validation.json")
+            import json
+            with open(validation_path, 'w') as f:
+                json.dump(validation_result, f, indent=2)
+            print(f"[INFO] Validation report saved: {validation_path}")
+        else:
+            print(f"[SUCCESS] Bin {i+1} validation passed for all {validation_result['door_count']} doors")
+
         dxf_path = bg.generate_dxf_for_bin_json(json_path, isannotationRequired=isannotationRequired)
         if dxf_path:
             generated_dxf_paths.append(dxf_path)
@@ -244,13 +260,37 @@ def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isa
         else:
             print(f"Bin {i+1} DXF generation failed for manifest: {json_path}")
 
-    # Create ZIP archive containing only .dxf files from the output directory
+    # Generate merged PDF from all DXF files (if required)
+    if ispdfrequired:
+        merged_pdf_path = os.path.join(output_dir, "output_bins_merged.pdf")
+        print("[INFO] Starting PDF generation and merging...")
+        try:
+            from tools.merge_dxf_to_pdf import convert_and_merge_dxf_directory
+            
+            pdf_result = convert_and_merge_dxf_directory(
+                dxf_directory=output_dir,
+                output_pdf_path=merged_pdf_path,
+                page_size_mm=(sheet_width, sheet_height),
+                margin_mm=10.0                
+            )
+            
+            if pdf_result:
+                print(f"[SUCCESS] Merged PDF created: {pdf_result}")
+            else:
+                print("[WARN] Failed to create merged PDF")
+        except Exception as e:
+            print(f"[ERROR] PDF generation failed: {e}")
+            merged_pdf_path = None
+    else:
+        print("[INFO] PDF generation skipped (ispdfrequired=False)")
+
+    # Create ZIP archive containing .dxf and .pdf files from the output directory
     zip_path = os.path.join(script_dir, "output_bins.zip")
     try:
         with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
             for root, _, files in os.walk(output_dir):
                 for f in files:
-                    if f.lower().endswith('.dxf'):
+                    if f.lower().endswith(('.dxf', '.pdf')):
                         full = os.path.join(root, f)
                         # store files with a relative path inside the archive
                         arcname = os.path.relpath(full, output_dir)

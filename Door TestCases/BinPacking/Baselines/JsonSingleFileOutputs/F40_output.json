@@ -1,0 +1,742 @@
+{
+  "door_category": "Double",
+  "door_type": "Normal",
+  "option": null,
+  "metadata": {
+    "label": "F40",
+    "file_name": "F40.dxf",
+    "width": 1309.0,
+    "height": 1670.0,
+    "rotated": false,
+    "is_annotation_required": true,
+    "offset": [
+      0.0,
+      0.0
+    ],
+    "hole_offset": "150X40",
+    "dimensions": {
+      "width_measurement": 1253.0,
+      "height_measurement": 1690.0,
+      "left_side_allowance_width": 25.0,
+      "right_side_allowance_width": 25.0,
+      "top_side_allowance_height": 25.0,
+      "bottom_side_allowance_height": 25.0
+    }
+  },
+  "geometry": {
+    "frames": [
+      {
+        "name": "outer",
+        "layer": "CUT",
+        "points": [
+          [
+            662.0,
+            12.0
+          ],
+          [
+            1309.0,
+            12.0
+          ],
+          [
+            1309.0,
+            1682.0
+          ],
+          [
+            662.0,
+            1682.0
+          ],
+          [
+            662.0,
+            12.0
+          ]
+        ],
+        "width": 647.0,
+        "height": 1670.0
+      },
+      {
+        "name": "inner",
+        "layer": "CUT",
+        "points": [
+          [
+            681.0,
+            0.0
+          ],
+          [
+            1297.0,
+            0.0
+          ],
+          [
+            1297.0,
+            1694.0
+          ],
+          [
+            681.0,
+            1694.0
+          ],
+          [
+            681.0,
+            0.0
+          ]
+        ],
+        "width": 616.0,
+        "height": 1694.0
+      },
+      {
+        "name": "left_outer",
+        "layer": "CUT",
+        "points": [
+          [
+            0.0,
+            12.0
+          ],
+          [
+            659.0,
+            12.0
+          ],
+          [
+            659.0,
+            1682.0
+          ],
+          [
+            0.0,
+            1682.0
+          ],
+          [
+            0.0,
+            12.0
+          ]
+        ],
+        "width": 659.0,
+        "height": 1670.0
+      },
+      {
+        "name": "left_inner",
+        "layer": "CUT",
+        "points": [
+          [
+            12.0,
+            0.0
+          ],
+          [
+            628.0,
+            0.0
+          ],
+          [
+            628.0,
+            1694.0
+          ],
+          [
+            12.0,
+            1694.0
+          ],
+          [
+            12.0,
+            0.0
+          ]
+        ],
+        "width": 616.0,
+        "height": 1694.0
+      }
+    ],
+    "cutouts": [
+      {
+        "name": "left_handle",
+        "layer": "CUT",
+        "points": [
+          [
+            573.0,
+            791.0
+          ],
+          [
+            598.0,
+            791.0
+          ],
+          [
+            598.0,
+            903.0
+          ],
+          [
+            573.0,
+            903.0
+          ],
+          [
+            573.0,
+            791.0
+          ]
+        ]
+      },
+      {
+        "name": "center_handle",
+        "layer": "CUT",
+        "points": [
+          [
+            711.0,
+            791.0
+          ],
+          [
+            736.0,
+            791.0
+          ],
+          [
+            736.0,
+            903.0
+          ],
+          [
+            711.0,
+            903.0
+          ],
+          [
+            711.0,
+            791.0
+          ]
+        ]
+      }
+    ],
+    "holes": [
+      {
+        "name": "hole_top",
+        "layer": "CUT",
+        "center": [
+          721.0,
+          1532.0
+        ],
+        "radius": 11.0
+      },
+      {
+        "name": "hole_bottom",
+        "layer": "CUT",
+        "center": [
+          721.0,
+          162.0
+        ],
+        "radius": 11.0
+      }
+    ],
+    "annotations": {
+      "frames": [
+        {
+          "type": "dimension",
+          "from_": [
+            662.0,
+            12.0
+          ],
+          "to": [
+            1309.0,
+            12.0
+          ],
+          "text": "W 647.0",
+          "offset": -5.0,
+          "angle": 0.0,
+          "text_offset": null,
+          "category": "frame",
+          "owner": "outer"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            662.0,
+            12.0
+          ],
+          "to": [
+            662.0,
+            1682.0
+          ],
+          "text": "H 1670.0",
+          "offset": -5.0,
+          "angle": 90.0,
+          "text_offset": null,
+          "category": "frame",
+          "owner": "outer"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            681.0,
+            1694.0
+          ],
+          "to": [
+            1297.0,
+            1694.0
+          ],
+          "text": "W 616.0",
+          "offset": 5.0,
+          "angle": 0.0,
+          "text_offset": null,
+          "category": "frame",
+          "owner": "inner"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            1297.0,
+            0.0
+          ],
+          "to": [
+            1297.0,
+            1694.0
+          ],
+          "text": "H 1694.0",
+          "offset": 5.0,
+          "angle": 90.0,
+          "text_offset": null,
+          "category": "frame",
+          "owner": "inner"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            0.0,
+            12.0
+          ],
+          "to": [
+            659.0,
+            12.0
+          ],
+          "text": "W 659.0",
+          "offset": -5.0,
+          "angle": 0.0,
+          "text_offset": null,
+          "category": "frame",
+          "owner": "left_outer"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            0.0,
+            12.0
+          ],
+          "to": [
+            0.0,
+            1682.0
+          ],
+          "text": "H 1670.0",
+          "offset": -5.0,
+          "angle": 90.0,
+          "text_offset": null,
+          "category": "frame",
+          "owner": "left_outer"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            12.0,
+            1694.0
+          ],
+          "to": [
+            628.0,
+            1694.0
+          ],
+          "text": "W 616.0",
+          "offset": 5.0,
+          "angle": 0.0,
+          "text_offset": null,
+          "category": "frame",
+          "owner": "left_inner"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            628.0,
+            0.0
+          ],
+          "to": [
+            628.0,
+            1694.0
+          ],
+          "text": "H 1694.0",
+          "offset": 5.0,
+          "angle": 90.0,
+          "text_offset": null,
+          "category": "frame",
+          "owner": "left_inner"
+        }
+      ],
+      "cutouts": [
+        {
+          "type": "dimension",
+          "from_": [
+            573.0,
+            791.0
+          ],
+          "to": [
+            598.0,
+            791.0
+          ],
+          "text": "W 25.0",
+          "offset": 6.0,
+          "angle": 0.0,
+          "text_offset": null,
+          "category": "cutout",
+          "owner": "left_handle"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            598.0,
+            791.0
+          ],
+          "to": [
+            598.0,
+            903.0
+          ],
+          "text": "H 112.0",
+          "offset": 6.0,
+          "angle": 90.0,
+          "text_offset": null,
+          "category": "cutout",
+          "owner": "left_handle"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            711.0,
+            791.0
+          ],
+          "to": [
+            736.0,
+            791.0
+          ],
+          "text": "W 25.0",
+          "offset": 9.0,
+          "angle": 0.0,
+          "text_offset": null,
+          "category": "cutout",
+          "owner": "center_handle"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            736.0,
+            791.0
+          ],
+          "to": [
+            736.0,
+            903.0
+          ],
+          "text": "H 112.0",
+          "offset": 9.0,
+          "angle": 90.0,
+          "text_offset": null,
+          "category": "cutout",
+          "owner": "center_handle"
+        }
+      ],
+      "glass_cut": [],
+      "center_handle": [
+        {
+          "type": "dimension",
+          "from_": [
+            681.0,
+            847.0
+          ],
+          "to": [
+            711.0,
+            847.0
+          ],
+          "text": "G 30.0",
+          "offset": 6.0,
+          "angle": 0.0,
+          "text_offset": null,
+          "category": "center_handle",
+          "owner": "center_handle"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            723.5,
+            903.0
+          ],
+          "to": [
+            723.5,
+            1682.0
+          ],
+          "text": "G 779.0",
+          "offset": 6.0,
+          "angle": 90.0,
+          "text_offset": null,
+          "category": "center_handle",
+          "owner": "center_handle"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            723.5,
+            12.0
+          ],
+          "to": [
+            723.5,
+            791.0
+          ],
+          "text": "G 779.0",
+          "offset": 6.0,
+          "angle": 90.0,
+          "text_offset": null,
+          "category": "center_handle",
+          "owner": "center_handle"
+        }
+      ],
+      "keybox": [],
+      "holes": [
+        {
+          "type": "dimension",
+          "from_": [
+            721.0,
+            1532.0
+          ],
+          "to": [
+            11.0,
+            0.0
+          ],
+          "text": "Ø22.0",
+          "offset": 4.0,
+          "angle": 0.0,
+          "text_offset": null,
+          "category": "hole",
+          "owner": "hole_top_circle"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            681.0,
+            1532.0
+          ],
+          "to": [
+            721.0,
+            1532.0
+          ],
+          "text": "X 40.0",
+          "offset": 6.0,
+          "angle": 0.0,
+          "text_offset": null,
+          "category": "hole",
+          "owner": "hole_top"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            721.0,
+            1532.0
+          ],
+          "to": [
+            721.0,
+            1682.0
+          ],
+          "text": "Y 150.0",
+          "offset": -6.0,
+          "angle": 90.0,
+          "text_offset": null,
+          "category": "hole",
+          "owner": "hole_top"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            721.0,
+            162.0
+          ],
+          "to": [
+            11.0,
+            0.0
+          ],
+          "text": "Ø22.0",
+          "offset": 6.0,
+          "angle": 0.0,
+          "text_offset": null,
+          "category": "hole",
+          "owner": "hole_bottom_circle"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            681.0,
+            162.0
+          ],
+          "to": [
+            721.0,
+            162.0
+          ],
+          "text": "X 40.0",
+          "offset": 6.0,
+          "angle": 0.0,
+          "text_offset": null,
+          "category": "hole",
+          "owner": "hole_bottom"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            721.0,
+            12.0
+          ],
+          "to": [
+            721.0,
+            162.0
+          ],
+          "text": "Y 150.0",
+          "offset": -6.0,
+          "angle": 90.0,
+          "text_offset": null,
+          "category": "hole",
+          "owner": "hole_bottom"
+        }
+      ],
+      "frame_gaps": [
+        {
+          "type": "dimension",
+          "from_": [
+            662.0,
+            50.0
+          ],
+          "to": [
+            681.0,
+            50.0
+          ],
+          "text": "G 19.0",
+          "offset": 6.0,
+          "angle": 0.0,
+          "text_offset": null,
+          "category": "frame_gap",
+          "owner": "outer_inner"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            1297.0,
+            1644.0
+          ],
+          "to": [
+            1309.0,
+            1644.0
+          ],
+          "text": "G 12.0",
+          "offset": -26.0,
+          "angle": 0.0,
+          "text_offset": null,
+          "category": "frame_gap",
+          "owner": "outer_inner"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            1259.0,
+            1682.0
+          ],
+          "to": [
+            1259.0,
+            1694.0
+          ],
+          "text": "G 12.0",
+          "offset": 26.0,
+          "angle": 90.0,
+          "text_offset": null,
+          "category": "frame_gap",
+          "owner": "outer_inner"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            1259.0,
+            0.0
+          ],
+          "to": [
+            1259.0,
+            12.0
+          ],
+          "text": "G 12.0",
+          "offset": -26.0,
+          "angle": 90.0,
+          "text_offset": null,
+          "category": "frame_gap",
+          "owner": "outer_inner"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            0.0,
+            50.0
+          ],
+          "to": [
+            12.0,
+            50.0
+          ],
+          "text": "G 12.0",
+          "offset": 6.0,
+          "angle": 0.0,
+          "text_offset": null,
+          "category": "frame_gap",
+          "owner": "left_outer_left_inner"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            628.0,
+            1644.0
+          ],
+          "to": [
+            659.0,
+            1644.0
+          ],
+          "text": "G 31.0",
+          "offset": -36.0,
+          "angle": 0.0,
+          "text_offset": null,
+          "category": "frame_gap",
+          "owner": "left_outer_left_inner"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            609.0,
+            1682.0
+          ],
+          "to": [
+            609.0,
+            1694.0
+          ],
+          "text": "G 12.0",
+          "offset": 36.0,
+          "angle": 90.0,
+          "text_offset": null,
+          "category": "frame_gap",
+          "owner": "left_outer_left_inner"
+        },
+        {
+          "type": "dimension",
+          "from_": [
+            609.0,
+            0.0
+          ],
+          "to": [
+            609.0,
+            12.0
+          ],
+          "text": "G 12.0",
+          "offset": -36.0,
+          "angle": 90.0,
+          "text_offset": null,
+          "category": "frame_gap",
+          "owner": "left_outer_left_inner"
+        }
+      ],
+      "other": []
+    },
+    "labels": [
+      {
+        "type": "center_label",
+        "text": "F40",
+        "position": [
+          1259.0,
+          835.0
+        ],
+        "align": "MIDDLE_RIGHT",
+        "height": 8.0,
+        "style": null,
+        "rotation": 90.0,
+        "layer": "DIMENSIONS",
+        "placement_offset": null,
+        "color": null,
+        "show_dimensions": true
+      }
+    ]
+  }
+}

@@ -16,22 +16,16 @@ import argparse
 from pathlib import Path
 from typing import Optional
 
-# Ensure project root is on sys.path
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 
 from fastapi_app.schemas_input import DoorDXFRequest
 from DoorDrawingGenerator import DoorDrawingGenerator
+import logging
 
+logger = logging.getLogger("generate_single_dxf")
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-TEST_CASES = [
-    "DoubleStandard.json",
-    "DoubleFourGlass.json",
-    "DoubleNormal.json",
-    "SingleFireBottom.json",
-    "SingleFireTop.json",
-    "SingleFireStandard.json",
-    "SingleNormal.json",
-]
 
 
 def parse_model(data: dict) -> DoorDXFRequest:
@@ -63,7 +57,7 @@ def get_output_filename(request: DoorDXFRequest, test_file: Path) -> str:
     return test_file.stem + ".dxf"
 
 
-def generate_dxf(test_file: Path, with_annotations: bool = True, verbose: bool = True) -> bool:
+def generate_dxf(test_file: Path, outputs_dir: Path, with_annotations: bool = True) -> bool:
     """Generate DXF file from a test case.
     
     Returns:
@@ -78,10 +72,11 @@ def generate_dxf(test_file: Path, with_annotations: bool = True, verbose: bool =
         data = json.loads(test_file.read_text(encoding="utf-8"))
         request = parse_model(data)
         
-        # Determine output filename
+        # Determine output filename and ensure output dir exists
         output_filename = get_output_filename(request, test_file)
-        output_path = test_file.with_name(output_filename)
-        
+        output_path = outputs_dir / output_filename
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
         # Generate DXF
         DoorDrawingGenerator.generate_door_dxf(
             request=request,
@@ -89,10 +84,7 @@ def generate_dxf(test_file: Path, with_annotations: bool = True, verbose: bool =
             isannotationRequired=with_annotations,
             save_file=True
         )
-        
-        if verbose:
-            print(f"✓ {test_file.name} → {output_filename}")
-        
+        logger.info("Wrote %s", output_path)
         return True
         
     except Exception as e:
@@ -102,34 +94,32 @@ def generate_dxf(test_file: Path, with_annotations: bool = True, verbose: bool =
         return False
 
 
-def find_test_by_name(name: str, test_cases: list[str]) -> Optional[str]:
+def find_test_by_name(name: str, candidates: list[Path]) -> Optional[Path]:
     """Find test case by partial name match (case-insensitive)."""
     name_lower = name.lower().replace(".json", "")
-    
-    for test_case in test_cases:
-        if name_lower == test_case.lower().replace(".json", ""):
-            return test_case
-        if name_lower in test_case.lower():
-            return test_case
-    
+
+    for p in candidates:
+        stem = p.stem.lower()
+        if name_lower == stem:
+            return p
+        if name_lower in stem:
+            return p
+
     return None
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Generate DXF files from door test cases",
+        description="Generate DXF files from JSON inputs in Door TestCases/Inputs",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                      Generate for all test cases
-  %(prog)s 0                    Generate for first test case (index 0)
-  %(prog)s 5                    Generate for test case at index 5
-  %(prog)s SingleNormal         Generate by name
+  %(prog)s                      Generate for all JSON files in Door TestCases/Inputs
+  %(prog)s 0                    Generate for first JSON file (index 0)
+  %(prog)s SingleNormal         Generate by name (partial match)
   %(prog)s all                  Explicitly generate all
   %(prog)s 2 --no-annotations   Generate without annotations
-  
-Available test cases:
-""" + "\n".join(f"  [{i}] {name}" for i, name in enumerate(TEST_CASES))
+"""
     )
     
     parser.add_argument(
@@ -144,33 +134,79 @@ Available test cases:
         action="store_true",
         help="Generate DXF without annotations"
     )
+    parser.add_argument(
+        "--input-dir",
+        dest="input_dir",
+        help="Input folder containing .json files (overrides default)",
+        default=None,
+    )
+    parser.add_argument(
+        "--output-dir",
+        dest="output_dir",
+        help="Output folder for generated DXF files (overrides default)",
+        default=None,
+    )
     
     args = parser.parse_args()
-    repo_root = Path(__file__).resolve().parents[1]
-    test_dir = repo_root / "Door TestCases"
-    
+    # Try several common input locations and pick the first that exists.
+    candidates = [
+        REPO_ROOT / "Door TestCases" / "DoorGeometry" / "Inputs",
+        REPO_ROOT / "Door TestCases" / "Inputs",
+        REPO_ROOT / "Door TestCases" / "BinPacking" / "Inputs",
+    ]
+
+    chosen_input = None
+    for c in candidates:
+        if c.exists() and any(c.glob("*.json")):
+            chosen_input = c
+            break
+
+    if args.input_dir:
+        inputs_dir = Path(args.input_dir)
+    elif chosen_input is not None:
+        inputs_dir = chosen_input
+    else:
+        # fallback to first candidate even if empty
+        inputs_dir = candidates[0]
+
+    # Choose output folder near the inputs when possible
+    if args.output_dir:
+        outputs_dir = Path(args.output_dir)
+    else:
+        if inputs_dir.match("*DoorGeometry*/Inputs"):
+            outputs_dir = inputs_dir.parent / "Baselines" / "Dxf"
+        else:
+            outputs_dir = REPO_ROOT / "Door TestCases" / "Baselines" / "Dxf"
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Gather all JSON test files in Inputs
+    candidates = sorted([p for p in inputs_dir.glob("*.json")])
+    if not candidates:
+        print(f"No test files found in {inputs_dir}", file=sys.stderr)
+        return 2
+
     # Determine which tests to run
-    tests_to_run = []
-    
+    tests_to_run: list[Path] = []
+
     if args.test == "all":
-        tests_to_run = TEST_CASES
+        tests_to_run = candidates
     elif args.test.isdigit():
         index = int(args.test)
-        if 0 <= index < len(TEST_CASES):
-            tests_to_run = [TEST_CASES[index]]
+        if 0 <= index < len(candidates):
+            tests_to_run = [candidates[index]]
         else:
-            print(f"Error: index {index} out of range (0..{len(TEST_CASES)-1})", file=sys.stderr)
+            print(f"Error: index {index} out of range (0..{len(candidates)-1})", file=sys.stderr)
             return 2
     else:
-        # Try to find by name
-        found = find_test_by_name(args.test, TEST_CASES)
+        # Try to find by name among candidate files
+        found = find_test_by_name(args.test, candidates)
         if found:
             tests_to_run = [found]
         else:
             print(f"Error: test case '{args.test}' not found", file=sys.stderr)
             print("\nAvailable test cases:", file=sys.stderr)
-            for i, name in enumerate(TEST_CASES):
-                print(f"  [{i}] {name}", file=sys.stderr)
+            for i, p in enumerate(candidates):
+                print(f"  [{i}] {p.name}", file=sys.stderr)
             return 2
     
     # Generate DXF files
@@ -179,10 +215,13 @@ Available test cases:
     print(f"Generating DXF for {len(tests_to_run)} test case(s) {annotation_status}...\n")
     
     results = []
-    for test_name in tests_to_run:
-        test_file = test_dir / test_name
-        success = generate_dxf(test_file, with_annotations=with_annotations, verbose=True)
-        results.append((test_name, success))
+    for test_file in tests_to_run:
+        try:
+            success = generate_dxf(test_file, outputs_dir, with_annotations=with_annotations)
+        except Exception:
+            logger.exception("Failed to generate for %s", test_file)
+            success = False
+        results.append((test_file.name, success))
     
     # Summary
     print("\n" + "=" * 50)
@@ -201,4 +240,4 @@ Available test cases:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

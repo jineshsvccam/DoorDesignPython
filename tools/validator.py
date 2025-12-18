@@ -518,7 +518,12 @@ def validate_schema(schema) -> bool:
     """
     # Convert Pydantic models to plain dict if necessary
     try:
-        data = schema.dict() if hasattr(schema, "dict") else dict(schema)
+        if hasattr(schema, "model_dump"):
+            data = schema.model_dump()
+        elif hasattr(schema, "dict"):
+            data = schema.dict()
+        else:
+            data = dict(schema)
     except Exception as e:
         logger.error(f"Failed to convert schema to dict: {e}")
         print(json.dumps({"validation": {"error": "schema_conversion_failed", "details": str(e)}}, indent=2))

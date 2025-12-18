@@ -145,7 +145,12 @@ def create_metadata(request, frames, offset, rotated):
     
     # When rotated, compute_frame_dimensions already gives us the rotated dimensions
     # So use those computed dimensions instead of frames["outer_height"]
-    dimensions_info = request.dimensions.dict() if hasattr(request, 'dimensions') and request.dimensions else None
+    dimensions_info = None
+    if hasattr(request, 'dimensions') and request.dimensions:
+        if hasattr(request.dimensions, "model_dump"):
+            dimensions_info = request.dimensions.model_dump()
+        else:
+            dimensions_info = request.dimensions.dict()
     
     return Metadata(
         label=request.metadata.label,

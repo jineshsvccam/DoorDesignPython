@@ -19,6 +19,10 @@ pip-wheel-metadata/
 *.dxf
 *.pdf
 
+# Keep DXF files in baseline Dxf folders (un-ignore these specific paths)
+!Door TestCases/DoorGeometry/Baselines/Dxf/*.dxf
+!Door TestCases/BinPacking/Baselines/Dxf/*.dxf
+
 # IDEs and editors
 .vscode/
 .idea/
@@ -28,6 +32,7 @@ logs/
 fastapi_app/logs/
 output/
 outputBulk/
+Door TestCases/BinPacking/Outputs/
 
 # Test case directories
 ExcelTestCases/

@@ -12,14 +12,15 @@ import sys
 import json
 from pathlib import Path
 
-# Ensure project root is on sys.path
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+# Ensure project root is on sys.path (two levels up from tools/BaseLines)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 
 from BatchDoorDXFGenerator import process_excel
 from geometry.door_geometry import compute_door_geometry
 
 
-EXCEL_FILE = "frontend/sample_door_template.xlsm"
+EXCEL_FILE = "Door TestCases/BinPacking/Inputs/Excel/sample_door_template.xlsm"
 FIXED_PARAMS = {
     "door_minus_measurement_width": 68,
     "door_minus_measurement_height": 70,
@@ -48,7 +49,7 @@ def serialize_output(output) -> str:
         return str(output)
 
 
-def process_door_param(door_param: dict, index: int, output_dir: Path) -> tuple[bool, str]:
+def process_door_param(door_param: dict, index: int, request_dir: Path, single_output_dir: Path) -> tuple[bool, str]:
     """Process a single door parameter and generate request/response JSON files.
     
     Args:
@@ -77,16 +78,18 @@ def process_door_param(door_param: dict, index: int, output_dir: Path) -> tuple[
         else:
             request_dict = dict(request_obj)
         
-        # Save request JSON in the same format as DoubleFourGlass.json
-        request_path = output_dir / f"{door_name}.json"
+        # Save request JSON to Inputs/Json
+        request_dir.mkdir(parents=True, exist_ok=True)
+        request_path = request_dir / f"{door_name}.json"
         request_json = json.dumps(request_dict, indent=2, default=str)
         request_path.write_text(request_json, encoding="utf-8")
         
         # Compute geometry using the request object directly
         output = compute_door_geometry(request_obj)
         
-        # Save output JSON
-        output_path = output_dir / f"{door_name}_output.json"
+        # Save output JSON (single-file outputs folder)
+        single_output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = single_output_dir / f"{door_name}_output.json"
         output_text = serialize_output(output)
         output_path.write_text(output_text, encoding="utf-8")
         
@@ -99,7 +102,7 @@ def process_door_param(door_param: dict, index: int, output_dir: Path) -> tuple[
 
 def main() -> int:
     """Main execution function."""
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = REPO_ROOT
     excel_path = repo_root / EXCEL_FILE
     
     # Check if Excel file exists
@@ -107,12 +110,15 @@ def main() -> int:
         print(f"Error: Excel file not found: {excel_path}", file=sys.stderr)
         return 1
     
-    # Create output directory
-    output_dir = repo_root / "ExcelTestCases"
-    output_dir.mkdir(exist_ok=True)
+    # Create directories
+    request_dir = repo_root / "Door TestCases" / "BinPacking" / "Inputs" / "Json"
+    single_output_dir = repo_root / "Door TestCases" / "BinPacking" / "Baselines" / "JsonSingleFileOutputs"
+    request_dir.mkdir(parents=True, exist_ok=True)
+    single_output_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"Processing Excel file: {excel_path}")
-    print(f"Output directory: {output_dir}\n")
+    print(f"Request JSONs will be saved to: {request_dir}")
+    print(f"Single-file outputs will be saved to: {single_output_dir}\n")
     
     try:
         # Process Excel file
@@ -123,7 +129,7 @@ def main() -> int:
         # Process each door parameter
         results = []
         for index, door_param in enumerate(door_params_list):
-            success, message = process_door_param(door_param, index, output_dir)
+            success, message = process_door_param(door_param, index, request_dir, single_output_dir)
             results.append((success, message))
             print(message)
         
@@ -140,7 +146,8 @@ def main() -> int:
                     print(f"  {message}")
             return 1
         
-        print(f"\nTest cases saved to: {output_dir}")
+        print(f"\nRequest JSONs saved to: {request_dir}")
+        print(f"Single-file outputs saved to: {single_output_dir}")
         return 0
         
     except Exception as e:

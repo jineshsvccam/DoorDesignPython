@@ -1,6 +1,9 @@
 from typing import List, Tuple, Any, Dict, Optional
 from fastapi_app.schemas_output import Annotation
 
+# compatibility: pydantic v2 renamed `parse_obj` -> `model_validate`
+_validate_annotation = getattr(Annotation, "model_validate", Annotation.parse_obj)
+
 
 def _bbox(points: List[Tuple[float, float]]):
     xs = [p[0] for p in points]
@@ -60,7 +63,7 @@ def _frame_dimensions_annotations(frame: Any, offset_base: float = 10.0, placeme
         w_angle = 0.0
         h_angle = 90.0
 
-    width_ann = Annotation.parse_obj({
+    width_ann = _validate_annotation({
         "type": "dimension",
         "from": w_from,
         "to": w_to,
@@ -71,7 +74,7 @@ def _frame_dimensions_annotations(frame: Any, offset_base: float = 10.0, placeme
         "owner": _get_name(frame) or "frame",
     })
 
-    height_ann = Annotation.parse_obj({
+    height_ann = _validate_annotation({
         "type": "dimension",
         "from": h_from,
         "to": h_to,
@@ -101,7 +104,7 @@ def _cutout_dimensions_annotations(cutout: Any, left_frame: Any = None, offset_b
     h_to = (max_x, max_y)
     h_text = f"H {height}"
 
-    width_ann = Annotation.parse_obj({
+    width_ann = _validate_annotation({
         "type": "dimension",
         "from": w_from,
         "to": w_to,
@@ -112,7 +115,7 @@ def _cutout_dimensions_annotations(cutout: Any, left_frame: Any = None, offset_b
         "owner": _get_name(cutout) or "cutout",
     })
 
-    height_ann = Annotation.parse_obj({
+    height_ann = _validate_annotation({
         "type": "dimension",
         "from": h_from,
         "to": h_to,
@@ -133,7 +136,7 @@ def _cutout_dimensions_annotations(cutout: Any, left_frame: Any = None, offset_b
             lf_right = max(p[0] for p in lf_pts)
             gap = round(max(0.0, min_x - lf_right), 3)
             if gap > 0:
-                anns.append(Annotation.parse_obj({
+                anns.append(_validate_annotation({
                     "type": "dimension",
                     "from": (lf_right, (min_y + max_y) / 2.0),
                     "to": (min_x, (min_y + max_y) / 2.0),
@@ -191,7 +194,7 @@ def _glass_cut_annotations(cutout: Any, inner_frame: Any, outer_frame: Any, offs
     if inner_left is not None:
         gap_left = round(max(0.0, min_x - inner_left), 3)
         if gap_left > 0:
-            anns.append(Annotation.parse_obj({
+            anns.append(_validate_annotation({
                 "type": "dimension",
                 "from": (inner_left, cy),
                 "to": (min_x, cy),
@@ -206,7 +209,7 @@ def _glass_cut_annotations(cutout: Any, inner_frame: Any, outer_frame: Any, offs
     if inner_right is not None:
         gap_right = round(max(0.0, inner_right - max_x), 3)
         if gap_right > 0:
-            anns.append(Annotation.parse_obj({
+            anns.append(_validate_annotation({
                 "type": "dimension",
                 "from": (max_x, cy),
                 "to": (inner_right, cy),
@@ -221,7 +224,7 @@ def _glass_cut_annotations(cutout: Any, inner_frame: Any, outer_frame: Any, offs
     if outer_top is not None:
         gap_top = round(max(0.0, outer_top - max_y), 3)
         if gap_top > 0:
-            anns.append(Annotation.parse_obj({
+            anns.append(_validate_annotation({
                 "type": "dimension",
                 "from": (cx, max_y),
                 "to": (cx, outer_top),
@@ -236,7 +239,7 @@ def _glass_cut_annotations(cutout: Any, inner_frame: Any, outer_frame: Any, offs
     if outer_bot is not None:
         gap_bot = round(max(0.0, min_y - outer_bot), 3)
         if gap_bot > 0:
-            anns.append(Annotation.parse_obj({
+            anns.append(_validate_annotation({
                 "type": "dimension",
                 "from": (cx, outer_bot),
                 "to": (cx, min_y),
@@ -267,7 +270,7 @@ def _glass_cut_annotations(cutout: Any, inner_frame: Any, outer_frame: Any, offs
         inner_from_x = min_x + (max_x - min_x) * 0.25
         inner_to_x = max_x - (max_x - min_x) * 0.25
         if inner_to_x > inner_from_x:
-            anns.append(Annotation.parse_obj({
+            anns.append(_validate_annotation({
                 "type": "dimension",
                 "from": (inner_from_x, cy),
                 "to": (inner_to_x, cy),
@@ -291,7 +294,7 @@ def _hole_dimensions_annotations(hole: Any, offset_base: float = 4.0):
     base = (cx, cy)
     text = f"Ø{dia}"
 
-    ann = Annotation.parse_obj({
+    ann = _validate_annotation({
         "type": "dimension",
         "from": base,
         "to": (hole.radius, 0),
@@ -340,7 +343,7 @@ def _frame_gap_annotation(frame1: Any, frame2: Any, offset_base: float = 6.0, sp
             y_pos = (bottom_y + top_y) / 2.0
         lx_from = (min(min_x1, min_x2), y_pos)
         lx_to = (max(min_x1, min_x2), y_pos)
-        anns.append(Annotation.parse_obj({
+        anns.append(_validate_annotation({
             "type": "dimension",
             "from": lx_from,
             "to": lx_to,
@@ -364,7 +367,7 @@ def _frame_gap_annotation(frame1: Any, frame2: Any, offset_base: float = 6.0, sp
             y_pos = (bottom_y + top_y) / 2.0
         rx_from = (min(max_x1, max_x2), y_pos)
         rx_to = (max(max_x1, max_x2), y_pos)
-        anns.append(Annotation.parse_obj({
+        anns.append(_validate_annotation({
             "type": "dimension",
             "from": rx_from,
             "to": rx_to,
@@ -387,7 +390,7 @@ def _frame_gap_annotation(frame1: Any, frame2: Any, offset_base: float = 6.0, sp
             x_pos = (left_x + right_x) / 2.0
         ty_from = (x_pos, min(max_y1, max_y2))
         ty_to = (x_pos, max(max_y1, max_y2))
-        anns.append(Annotation.parse_obj({
+        anns.append(_validate_annotation({
             "type": "dimension",
             "from": ty_from,
             "to": ty_to,
@@ -411,7 +414,7 @@ def _frame_gap_annotation(frame1: Any, frame2: Any, offset_base: float = 6.0, sp
             x_pos = (left_x + right_x) / 2.0
         by_from = (x_pos, min(min_y1, min_y2))
         by_to = (x_pos, max(min_y1, min_y2))
-        anns.append(Annotation.parse_obj({
+        anns.append(_validate_annotation({
             "type": "dimension",
             "from": by_from,
             "to": by_to,
@@ -489,7 +492,7 @@ def _center_handle_annotations(center_cut: Any, frames: Optional[List[Any]], out
     if left_ref_x is not None:
         gap_h = round(max(0.0, c_min_x - left_ref_x), 3)
         if gap_h > 0:
-            anns.append(Annotation.parse_obj({
+            anns.append(_validate_annotation({
                 "type": "dimension",
                 "from": (left_ref_x, c_cy),
                 "to": (c_min_x, c_cy),
@@ -509,7 +512,7 @@ def _center_handle_annotations(center_cut: Any, frames: Optional[List[Any]], out
 
             gap_top = round(max(0.0, of_top - c_max_y), 3)
             if gap_top > 0:
-                anns.append(Annotation.parse_obj({
+                anns.append(_validate_annotation({
                     "type": "dimension",
                     "from": (c_cx, c_max_y),
                     "to": (c_cx, of_top),
@@ -522,7 +525,7 @@ def _center_handle_annotations(center_cut: Any, frames: Optional[List[Any]], out
 
             gap_bot = round(max(0.0, c_min_y - of_bot), 3)
             if gap_bot > 0:
-                anns.append(Annotation.parse_obj({
+                anns.append(_validate_annotation({
                     "type": "dimension",
                     "from": (c_cx, of_bot),
                     "to": (c_cx, c_min_y),
@@ -609,7 +612,7 @@ def _keybox_annotations(key_cut: Any, frames: List[Any], outer_frame: Any) -> Li
     if left_ref_x is not None:
         gap_left = round(max(0.0, k_min_x - left_ref_x), 3)
         if gap_left > 0:
-            anns.append(Annotation.parse_obj({
+            anns.append(_validate_annotation({
                 "type": "dimension",
                 "from": (left_ref_x, k_cy),
                 "to": (k_min_x, k_cy),
@@ -622,7 +625,7 @@ def _keybox_annotations(key_cut: Any, frames: List[Any], outer_frame: Any) -> Li
     if right_ref_x is not None:
         gap_right = round(max(0.0, right_ref_x - k_max_x), 3)
         if gap_right > 0:
-            anns.append(Annotation.parse_obj({
+            anns.append(_validate_annotation({
                 "type": "dimension",
                 "from": (k_max_x, k_cy),
                 "to": (right_ref_x, k_cy),
@@ -643,7 +646,7 @@ def _keybox_annotations(key_cut: Any, frames: List[Any], outer_frame: Any) -> Li
             of_bot = min(p[1] for p in of_pts)
             gap_bot = round(max(0.0, k_min_y - of_bot), 3)
             if gap_bot > 0:
-                anns.append(Annotation.parse_obj({
+                anns.append(_validate_annotation({
                     "type": "dimension",
                     "from": (k_cx, of_bot),
                     "to": (k_cx, k_min_y),
@@ -708,7 +711,7 @@ def _hole_offset_annotations(hole: Any, frames: List[Any], inner_frame: Any, out
     if inner_left is not None:
         dx = round(max(0.0, hx - inner_left), 3)
         if dx > 0:
-            anns.append(Annotation.parse_obj({
+            anns.append(_validate_annotation({
                 "type": "dimension",
                 "from": (inner_left, hy),
                 "to": (hx, hy),
@@ -721,7 +724,7 @@ def _hole_offset_annotations(hole: Any, frames: List[Any], inner_frame: Any, out
     elif outer_left is not None:
         dx = round(max(0.0, hx - outer_left), 3)
         if dx > 0:
-            anns.append(Annotation.parse_obj({
+            anns.append(_validate_annotation({
                 "type": "dimension",
                 "from": (outer_left, hy),
                 "to": (hx, hy),
@@ -736,7 +739,7 @@ def _hole_offset_annotations(hole: Any, frames: List[Any], inner_frame: Any, out
     if h_name == "hole_top" and outer_top is not None:
         dy = round(max(0.0, outer_top - hy), 3)
         if dy > 0:
-            anns.append(Annotation.parse_obj({
+            anns.append(_validate_annotation({
                 "type": "dimension",
                 "from": (hx, hy),
                 "to": (hx, outer_top),
@@ -750,7 +753,7 @@ def _hole_offset_annotations(hole: Any, frames: List[Any], inner_frame: Any, out
     if h_name == "hole_bottom" and outer_bot is not None:
         dyb = round(max(0.0, hy - outer_bot), 3)
         if dyb > 0:
-            anns.append(Annotation.parse_obj({
+            anns.append(_validate_annotation({
                 "type": "dimension",
                 "from": (hx, outer_bot),
                 "to": (hx, hy),

@@ -57,7 +57,9 @@ class BatchGenerator:
                     continue
                 req = dp.get("request")
                 # Normalize request to a dict
-                if req is not None and hasattr(req, "dict"):
+                if req is not None and hasattr(req, "model_dump"):
+                    req_dict = req.model_dump()
+                elif req is not None and hasattr(req, "dict"):
                     req_dict = req.dict()
                 else:
                     req_dict = req or {}
@@ -98,9 +100,9 @@ class BatchGenerator:
         # Parse into the correct pydantic manifest model
         try:
             if transformed_mode:
-                manifest = BinTransformedManifest.parse_raw(raw_text)
+                manifest = BinTransformedManifest.model_validate_json(raw_text)
             else:
-                manifest = BinManifest.parse_raw(raw_text)
+                manifest = BinManifest.model_validate_json(raw_text)
         except Exception as e:
             print(f"Failed to parse manifest '{json_path}': {e}")
             return None
@@ -120,19 +122,19 @@ class BatchGenerator:
             if transformed_mode:
                 orig_req = getattr(d, "original_request", None) or getattr(d, "request", None) or {}
                 try:
-                    req_obj = DoorDXFRequest.parse_obj(orig_req or {})
+                    req_obj = DoorDXFRequest.model_validate(orig_req or {})
                 except Exception:
                     req_obj = orig_req
 
                 tval = getattr(d, "transformed", None)
                 if tval is not None:
                     try:
-                        transformed_obj = SchemasOutput.parse_obj(tval) if isinstance(tval, (dict, str)) else tval
+                        transformed_obj = SchemasOutput.model_validate(tval) if isinstance(tval, (dict, str)) else tval
                     except Exception:
                         transformed_obj = tval
             else:
                 try:
-                    req_obj = DoorDXFRequest.parse_obj(getattr(d, "request", {}) or {})
+                    req_obj = DoorDXFRequest.model_validate(getattr(d, "request", {}) or {})
                 except Exception:
                     req_obj = getattr(d, "request", {})
 
@@ -177,7 +179,7 @@ class BatchGenerator:
         """
         try:
             with open(json_path, "r", encoding="utf-8") as fh:
-                manifest = BinManifest.parse_raw(fh.read())
+                manifest = BinManifest.model_validate_json(fh.read())
         except Exception as e:
             print(f"Failed to load JSON '{json_path}': {e}")
             return None
@@ -191,7 +193,7 @@ class BatchGenerator:
             # Try to reconstruct DoorDXFRequest
             req_obj = None
             try:
-                req_obj = DoorDXFRequest.parse_obj(d.request or {})
+                req_obj = DoorDXFRequest.model_validate(d.request or {})
             except Exception:
                 req_obj = None
 

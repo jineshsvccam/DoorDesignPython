@@ -214,6 +214,54 @@ def generate_bin_dxf(sheet_w, sheet_h, doors_for_generator, placements, out_dxf,
     print(f" Bin DXF file '{out_dxf}' created successfully.")
 
 
+def generate_all_bins_utilization_summary(sheet_width, sheet_height, bins, door_params_list, output_txt_path=None):
+    """Generate a summary string (and optionally write to a text file) for bin utilization and missed doors."""
+    lines = []
+    lines.append("========== BIN UTILIZATION SUMMARY ==========")
+    total_doors = len([d for d in door_params_list if d.get("file_name")])
+    total_bins = len(bins)
+    lines.append(f"Total doors requested: {total_doors}")
+    lines.append(f"Total bins used: {total_bins}")
+
+    all_packed_files = set()
+    for i, bin_data in enumerate(bins):
+        placements = bin_data.get("placements", [])
+        bin_filenames = [p.get("file_name") for p in placements if isinstance(p, dict) and p.get("file_name")]
+        all_packed_files.update(bin_filenames)
+        bin_area = float(sheet_width) * float(sheet_height)
+        used_area = 0.0
+        for p in placements:
+            width = p.get('width')
+            height = p.get('height')
+            try:
+                if width is not None and height is not None:
+                    width_f = float(width)
+                    height_f = float(height)
+                    if width_f > 0 and height_f > 0:
+                        used_area += width_f * height_f
+            except Exception:
+                pass
+        utilization = (used_area / bin_area * 100) if bin_area > 0 else 0.0
+        lines.append(f"\nBin {i+1}:")
+        for fname in bin_filenames:
+            lines.append(f"  {fname}")
+        lines.append(f"  Utilization: {utilization:.2f}%")
+
+    all_input_files = set(d.get("file_name") for d in door_params_list if d.get("file_name"))
+    missed = sorted(list(all_input_files - all_packed_files))
+    if missed:
+        lines.append("\nMissed doors (not packed in any bin):")
+        for fname in missed:
+            lines.append(f"  {fname}")
+    else:
+        lines.append("\nAll doors were packed into bins.")
+
+    summary = "\n".join(lines)
+    if output_txt_path:
+        with open(output_txt_path, "w", encoding="utf-8") as f:
+            f.write(summary)
+    return summary
+
 def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isannotationRequired=True, ispdfrequired=True):
    
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -260,20 +308,26 @@ def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isa
         else:
             print(f"Bin {i+1} DXF generation failed for manifest: {json_path}")
 
+    # --- Bin Utilization and Missed Doors Summary ---
+    summary_txt_path = os.path.join(output_dir, "bin_utilization_summary.txt")
+    summary = generate_all_bins_utilization_summary(sheet_width, sheet_height, bins, door_params_list, output_txt_path=summary_txt_path)
+    print("\n" + summary)
     # Generate merged PDF from all DXF files (if required)
     if ispdfrequired:
         merged_pdf_path = os.path.join(output_dir, "output_bins_merged.pdf")
         print("[INFO] Starting PDF generation and merging...")
         try:
             from tools.merge_dxf_to_pdf import convert_and_merge_dxf_directory
-            
             pdf_result = convert_and_merge_dxf_directory(
                 dxf_directory=output_dir,
                 output_pdf_path=merged_pdf_path,
                 page_size_mm=(sheet_width, sheet_height),
-                margin_mm=10.0                
+                margin_mm=10.0,
+                summary_txt_path=summary_txt_path,
+                summary_page_size_mm=(297, 420),  # A3 portrait
+                summary_font_size=12,
+                summary_margin_mm=20
             )
-            
             if pdf_result:
                 print(f"[SUCCESS] Merged PDF created: {pdf_result}")
             else:

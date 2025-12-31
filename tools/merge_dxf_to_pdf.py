@@ -119,7 +119,11 @@ def convert_and_merge_dxf_directory(
     dxf_directory: Union[str, os.PathLike],
     output_pdf_path: Union[str, os.PathLike],
     page_size_mm: tuple = DEFAULT_SHEET_SIZE_MM,
-    margin_mm: float = 10.0
+    margin_mm: float = 10.0,
+    summary_txt_path: Optional[str] = None,
+    summary_page_size_mm: tuple = (297, 420),
+    summary_font_size: int = 12,
+    summary_margin_mm: int = 20
 ) -> Optional[str]:
     """
     Convert all DXF files in a directory to PDFs and merge into a single PDF.
@@ -141,40 +145,47 @@ def convert_and_merge_dxf_directory(
     
     # Find all DXF files
     dxf_files = sorted(dxf_dir.glob("*.dxf"))
-    if not dxf_files:
-        print(f"[WARN] No DXF files found in directory: {dxf_directory}")
-        return None
-    
-    print(f"[INFO] Found {len(dxf_files)} DXF file(s) to convert")
-    
-    # Create temporary directory for individual PDFs
     temp_dir = Path(tempfile.mkdtemp(prefix="pdf_temp_"))
     print(f"[INFO] Using temporary directory: {temp_dir}")
-    
+
     try:
-        # Convert each DXF to PDF in temp directory
         pdf_paths = []
-        for dxf_file in dxf_files:
-            pdf_file = temp_dir / dxf_file.with_suffix('.pdf').name
-            print(f"[INFO] Converting {dxf_file.name} to PDF...")
-            
-            if convert_dxf_to_pdf(dxf_file, pdf_file, page_size_mm, margin_mm):
-                pdf_paths.append(pdf_file)
-            else:
-                print(f"[WARN] Skipping {dxf_file.name} due to conversion failure")
-        
+        if dxf_files:
+            print(f"[INFO] Found {len(dxf_files)} DXF file(s) to convert")
+            # Convert each DXF to PDF in temp directory
+            for dxf_file in dxf_files:
+                pdf_file = temp_dir / dxf_file.with_suffix('.pdf').name
+                print(f"[INFO] Converting {dxf_file.name} to PDF...")
+                if convert_dxf_to_pdf(dxf_file, pdf_file, page_size_mm, margin_mm):
+                    pdf_paths.append(pdf_file)
+                else:
+                    print(f"[WARN] Skipping {dxf_file.name} due to conversion failure")
+        else:
+            print(f"[WARN] No DXF files found in directory: {dxf_directory}")
+
+        # If a summary text file is provided, convert it to PDF and append as last page
+        summary_pdf_path = None
+        if summary_txt_path and Path(summary_txt_path).exists():
+            try:
+                from tools.txt_to_pdf import txt_to_pdf
+                summary_pdf_path = temp_dir / "bin_utilization_summary.pdf"
+                txt_to_pdf(summary_txt_path, summary_pdf_path, page_size_mm=summary_page_size_mm, font_size=summary_font_size, margin_mm=summary_margin_mm)
+                pdf_paths.append(summary_pdf_path)
+                print(f"[INFO] Added summary PDF as last page: {summary_pdf_path}")
+            except Exception as e:
+                print(f"[WARN] Could not convert summary txt to PDF: {e}")
+
         if not pdf_paths:
-            print("[ERROR] No PDFs were successfully created.")
+            print("[WARN] No DXF PDFs or summary PDF to merge. Nothing to do.")
             return None
-        
+
         # Merge all PDFs
         print(f"[INFO] Merging {len(pdf_paths)} PDF(s) into single file...")
         output_path = Path(output_pdf_path)
-        
+
         if merge_pdfs_to_single_file(pdf_paths, output_path):
             return str(output_path)
         return None
-            
     finally:
         # Always cleanup temporary directory
         if temp_dir.exists():

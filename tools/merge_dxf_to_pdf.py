@@ -121,7 +121,7 @@ def convert_and_merge_dxf_directory(
     page_size_mm: tuple = DEFAULT_SHEET_SIZE_MM,
     margin_mm: float = 10.0,
     summary_txt_path: Optional[str] = None,
-    summary_page_size_mm: tuple = (297, 420),
+    summary_page_size_mm: tuple = DEFAULT_SHEET_SIZE_MM,
     summary_font_size: int = 12,
     summary_margin_mm: int = 20
 ) -> Optional[str]:
@@ -169,7 +169,8 @@ def convert_and_merge_dxf_directory(
             try:
                 from tools.txt_to_pdf import txt_to_pdf
                 summary_pdf_path = temp_dir / "bin_utilization_summary.pdf"
-                txt_to_pdf(summary_txt_path, summary_pdf_path, page_size_mm=summary_page_size_mm, font_size=summary_font_size, margin_mm=summary_margin_mm)
+                # Use a larger font for better visibility
+                txt_to_pdf(summary_txt_path, summary_pdf_path, page_size_mm=summary_page_size_mm, font_size=max(14, summary_font_size), margin_mm=summary_margin_mm)
                 pdf_paths.append(summary_pdf_path)
                 print(f"[INFO] Added summary PDF as last page: {summary_pdf_path}")
             except Exception as e:

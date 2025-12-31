@@ -260,6 +260,8 @@ def generate_all_bins_utilization_summary(sheet_width, sheet_height, bins, door_
     if output_txt_path:
         with open(output_txt_path, "w", encoding="utf-8") as f:
             f.write(summary)
+            f.flush()
+            os.fsync(f.fileno())
     return summary
 
 def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isannotationRequired=True, ispdfrequired=True):
@@ -324,7 +326,7 @@ def generate_all_bins_dxf(sheet_width, sheet_height, bins, door_params_list, isa
                 page_size_mm=(sheet_width, sheet_height),
                 margin_mm=10.0,
                 summary_txt_path=summary_txt_path,
-                summary_page_size_mm=(297, 420),  # A3 portrait
+                summary_page_size_mm=(sheet_width, sheet_height), 
                 summary_font_size=12,
                 summary_margin_mm=20
             )

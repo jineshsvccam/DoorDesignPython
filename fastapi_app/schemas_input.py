@@ -39,7 +39,7 @@ class DefaultInfo(BaseModel):
     fire_glass_top_margin_double: float = 150.0
     fire_glass_bottom_margin: float = 240.0
     double_door_gap: float = 3.0
-    double_door_minimum_width: float = 500.0 # single piece width for double doors
+    double_door_minimum_width: float = 390.0 # single piece width for double doors
     # Packing/placement gap to add around computed bbox (mm)
     extra_spacing: float = 5.0
 

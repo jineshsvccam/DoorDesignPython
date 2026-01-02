@@ -65,8 +65,8 @@ class DoorDrawingGenerator:
         msp: Optional[Modelspace] = None,
         save_file: bool = True,
         rotated: bool = False,
-        save_pdf: bool = False,
         request_id: Optional[str] = None,
+        output_format: str = "dxf",  # 'dxf', 'pdf', 'svg', 'png'
     ) -> None:
         """Generate a DXF file for a door design with annotations.
         
@@ -323,16 +323,27 @@ class DoorDrawingGenerator:
             doc.saveas(file_name)
             logger.info(f"DXF file '{file_name}' created successfully.")
 
-            # If user also wants a PDF, generate it using the headless exporter
-            if save_pdf:
-                try:
-                    pdf_name = os.path.splitext(str(file_name))[0] + ".pdf"
+            base_name, _ = os.path.splitext(str(file_name))
+            try:
+                if output_format == "pdf":
+                    pdf_name = base_name + ".pdf"
                     from tools.export_dxf_to_pdf_headless import export_dxf_to_pdf_headless
                     export_dxf_to_pdf_headless(doc, pdf_name)
                     logger.info(f"PDF file '{pdf_name}' created successfully.")
-                except Exception as e:
-                    logger.error(f"Failed to export PDF: {e}")
-                    logger.exception("PDF export failed: %s", e)
+                elif output_format == "svg":
+                    svg_name = base_name + ".svg"
+                    from tools.export_dxf_to_svg_headless import export_dxf_to_svg_headless
+                    export_dxf_to_svg_headless(doc, svg_name)
+                    logger.info(f"SVG file '{svg_name}' created successfully.")
+                elif output_format == "png":
+                    png_name = base_name + ".png"
+                    from tools.export_dxf_to_png_headless import export_dxf_to_png_headless
+                    export_dxf_to_png_headless(doc, png_name)
+                    logger.info(f"PNG file '{png_name}' created successfully.")
+                # Default is DXF, already saved above
+            except Exception as e:
+                logger.error(f"Failed to export {output_format.upper()}: {e}")
+                logger.exception(f"{output_format.upper()} export failed: %s", e)
 
     @staticmethod
     def add_dimension_line(
@@ -886,7 +897,7 @@ if __name__ == "__main__":
             defaults=DefaultInfo()
         )
 
-        # save_pdf is a parameter on generate_door_dxf (not part of metadata)
-        DoorDrawingGenerator.generate_door_dxf(req, file_name="door_F14P2.dxf", save_pdf=True)
+        # Use output_format parameter to control export type (e.g., 'pdf', 'svg', 'png', 'dxf')
+        DoorDrawingGenerator.generate_door_dxf(req, file_name="door_F14P2.dxf", output_format="pdf")
     except Exception as e:
         logger.error(f"Error in main execution: {e}")

@@ -309,7 +309,10 @@ async def healthcheck():
 
 
 @app.post("/generate-single-dxf/")
-async def generate_single_dxf(params: DoorDXFRequest = Body(...), save_pdf: bool = Query(False, description="If true, also export and return a PDF instead of DXF")):
+async def generate_single_dxf(
+    params: DoorDXFRequest = Body(...),
+    output_format: str = Query("dxf", description="Output format: dxf, pdf, svg, or png")
+):
     """Generate one DXF from JSON parameters and return the DXF file.
 
     The generator is synchronous/blocking, so we run it in a thread to avoid
@@ -319,12 +322,27 @@ async def generate_single_dxf(params: DoorDXFRequest = Body(...), save_pdf: bool
     output_dir = Path(script_dir) / "output"
     output_dir.mkdir(exist_ok=True)
 
+
+
     # Sanitize filename to avoid path traversal and ensure a basename
-    filename = os.path.basename(params.metadata.file_name or "door_output.dxf")
+    base_filename = os.path.basename(params.metadata.file_name or "door_output.dxf")
+    base, _ = os.path.splitext(base_filename)
+    ext = ".dxf"
+    if output_format == "pdf":
+        ext = ".pdf"
+    elif output_format == "svg":
+        ext = ".svg"
+    elif output_format == "png":
+        ext = ".png"
+    filename = base + ".dxf"  # Always generate DXF first
     out_path = output_dir / filename
+    result_path = output_dir / (base + ext)
+
 
     # Get the request_id from context to pass explicitly
     current_request_id = request_id_ctx.get()
+
+
 
     try:
         # run the potentially blocking generation in a thread, passing request_id explicitly
@@ -340,41 +358,32 @@ async def generate_single_dxf(params: DoorDXFRequest = Body(...), save_pdf: bool
             None,  # msp
             True,  # save_file
             False,  # rotated
-            bool(save_pdf),  # save_pdf
             current_request_id,  # request_id
+            output_format,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"DXF generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"File generation failed: {e}")
 
-    if not out_path.exists():
-        # If DXF wasn't created, but PDF was requested maybe PDF exists — check that too
-        pdf_path = out_path.with_suffix('.pdf')
-        if save_pdf and pdf_path.exists():
-            return FileResponse(
-                path=str(pdf_path),
-                filename=pdf_path.name,
-                media_type="application/pdf",
-                headers={"Content-Disposition": f'attachment; filename="{pdf_path.name}"'}
-            )
-        raise HTTPException(status_code=500, detail="DXF file was not created")
 
-    # If PDF requested, prefer returning the PDF when available
-    if save_pdf:
-        pdf_path = out_path.with_suffix('.pdf')
-        if pdf_path.exists():
-            return FileResponse(
-                path=str(pdf_path),
-                filename=pdf_path.name,
-                media_type="application/pdf",
-                headers={"Content-Disposition": f'attachment; filename="{pdf_path.name}"'}
-            )
 
-    # Fallback: return DXF file
+    # Check for output file existence and return the correct file
+    if not result_path.exists():
+        raise HTTPException(status_code=500, detail=f"{output_format.upper()} file was not created")
+
+    # Set correct media type
+    media_types = {
+        "dxf": "application/dxf",
+        "pdf": "application/pdf",
+        "svg": "image/svg+xml",
+        "png": "image/png",
+    }
+    media_type = media_types.get(output_format, "application/octet-stream")
+
     return FileResponse(
-        path=str(out_path),
-        filename=out_path.name,
-        media_type="application/dxf",
-        headers={"Content-Disposition": f'attachment; filename="{out_path.name}"'}
+        path=str(result_path),
+        filename=result_path.name,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{result_path.name}"'}
     )
 
 

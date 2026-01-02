@@ -11,7 +11,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-EXCEL_FILE = "frontend/sample_door_template.xlsm"
+EXCEL_FILE = "frontend/sample_door_template_withoutValidation.xlsm"
 FIXED_PARAMS = {
     "door_minus_measurement_width": 68,
     "door_minus_measurement_height": 70,

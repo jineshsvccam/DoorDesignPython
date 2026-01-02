@@ -388,7 +388,7 @@ document.addEventListener("click", (e) => {
       try {
         const payload = buildRequestPayload();
 
-        const resp = await fetch("/generate-single-dxf/?save_pdf=true", {
+        const resp = await fetch("/generate-single-dxf/?output_format=pdf", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -670,7 +670,7 @@ form.addEventListener("submit", async (e) => {
     try {
       const requestPayload = buildRequestPayload();
 
-      const response = await fetch("/generate-single-dxf/", {
+      const response = await fetch("/generate-single-dxf/?output_format=dxf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestPayload),

@@ -28,7 +28,8 @@ from fastapi_app.services.token_service import (
     mark_token_as_used, TOKENS_FILE_PATH
 )
 from fastapi_app.services.user_service import (
-    get_registered_user, activate_user, deactivate_user, USERS_FILE_PATH
+    get_registered_user, activate_user, deactivate_user, USERS_FILE_PATH,
+    load_devices, revoke_device
 )
 
 
@@ -233,6 +234,45 @@ def cmd_stats():
     print(f"   Users:   {USERS_FILE_PATH}")
 
 
+def cmd_list_devices():
+    """List registered FingerprintJS devices"""
+    print_header("Registered Devices")
+
+    devices = load_devices().get("devices", [])
+    if not devices:
+        print("No devices registered yet.")
+        return
+
+    for i, device in enumerate(devices, 1):
+        visitor_hash = device.get("visitor_id_hash", "")
+        print(f"{i}. Status:      {device.get('status', 'unknown')}")
+        print(f"   Device ID:   {device.get('device_id', '')}")
+        print(f"   Type:        {device.get('device_type', 'desktop')}")
+        print(f"   Label:       {device.get('device_label', '') or 'N/A'}")
+        print(f"   Registered:  {device.get('registered_at', '')}")
+        print(f"   Last seen:   {device.get('last_seen_at', '')}")
+        print(f"   IP:          {device.get('ip_address', '')}")
+        print(f"   Visitor:     {visitor_hash[:12]}...")
+        print(f"   Browser:     {(device.get('user_agent', '') or 'N/A')[:80]}")
+        print()
+
+
+def cmd_revoke_device(device_id):
+    """Revoke a registered device by device_id"""
+    print_header("Revoke Device")
+
+    if not device_id:
+        print("Please provide a device_id")
+        print("Usage: python tools/auth_admin.py revoke-device DEVICE_ID")
+        return
+
+    if revoke_device(device_id):
+        print("Device revoked successfully")
+        print(f"Device ID: {device_id}")
+    else:
+        print(f"Device not found: {device_id}")
+
+
 def cmd_help():
     """Show help message"""
     print_header("🔐 Auth Admin CLI - Help")
@@ -245,6 +285,8 @@ def cmd_help():
         ("block TOKEN", "Block a user by token"),
         ("unblock TOKEN", "Unblock a user by token"),
         ("stats", "Show authentication statistics"),
+        ("devices", "List registered FingerprintJS devices"),
+        ("revoke-device DEVICE_ID", "Revoke a registered device"),
         ("help", "Show this help message"),
     ]
     
@@ -280,6 +322,8 @@ def main():
         "unblock": lambda: cmd_unblock_user(args[0] if args else None),
         "info": lambda: cmd_user_info(args[0] if args else None),
         "stats": cmd_stats,
+        "devices": cmd_list_devices,
+        "revoke-device": lambda: cmd_revoke_device(args[0] if args else None),
         "help": cmd_help,
     }
     

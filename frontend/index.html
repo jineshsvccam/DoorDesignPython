@@ -5,9 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DXF Generator</title>
     <link rel="stylesheet" href="/static/styles.css" />
+    <style>
+      body.auth-pending {
+        visibility: hidden;
+      }
+    </style>
   </head>
 
-  <body>
+  <body class="auth-pending">
     <div class="container">
       <div class="page-header">
         <h2>DXF Generator</h2>
@@ -215,6 +220,7 @@
       Developed with ❤️ by <span class="author-highlight">Jinesh</span>
     </footer>
 
-    <script src="/static/app.js?v=3" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js"></script>
+    <script src="/static/app.js?v=4" defer></script>
   </body>
 </html>

@@ -224,7 +224,67 @@
 
     <div class="last-updated" id="last-updated"></div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js"></script>
     <script>
+      const AUTH_TOKEN_KEY = "door_jwt";
+
+      function getStoredJwt() {
+        return localStorage.getItem(AUTH_TOKEN_KEY) || "";
+      }
+
+      function storeJwt(token) {
+        if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+      }
+
+      function clearJwt() {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+      }
+
+      async function loadFingerprintVisitorId() {
+        if (!window.FingerprintJS) {
+          throw new Error("FingerprintJS failed to load");
+        }
+        const fp = await window.FingerprintJS.load();
+        const result = await fp.get();
+        return result.visitorId;
+      }
+
+      async function recoverJwtFromFingerprint() {
+        const visitorId = await loadFingerprintVisitorId();
+        const response = await fetch("/auth/recover", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ visitor_id: visitorId }),
+        });
+        if (!response.ok) return false;
+        const data = await response.json();
+        if (data && data.token) {
+          storeJwt(data.token);
+          return true;
+        }
+        return false;
+      }
+
+      async function authFetch(url, options = {}) {
+        const requestOptions = { ...options };
+        const headers = new Headers(requestOptions.headers || {});
+        const token = getStoredJwt();
+        if (token) {
+          headers.set("Authorization", `Bearer ${token}`);
+        }
+        requestOptions.headers = headers;
+
+        let response = await fetch(url, requestOptions);
+        if (response.status === 401) {
+          clearJwt();
+          if (await recoverJwtFromFingerprint()) {
+            headers.set("Authorization", `Bearer ${getStoredJwt()}`);
+            response = await fetch(url, requestOptions);
+          }
+        }
+        return response;
+      }
+
       /* ---------------- DARK MODE ---------------- */
       function toggleDarkMode() {
         document.body.classList.toggle("dark");
@@ -246,7 +306,8 @@
         error.style.display = "none";
 
         try {
-          const res = await fetch("/api/logs/summary");
+          const res = await authFetch("/api/logs/summary");
+          if (!res.ok) throw new Error("Authentication required");
           const data = await res.json();
 
           loading.style.display = "none";

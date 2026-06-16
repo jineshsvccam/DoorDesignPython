@@ -54,15 +54,16 @@ from fastapi_app.log_helper import (
 from geometry.door_geometry import compute_door_geometry
 from geometry.prepare_dimensions import prepare_dimensions
 
+from fastapi_app.services.cookie_service import get_cookie_token, create_cookie_token
+from fastapi_app.services.jwt_service import JWT_COOKIE_NAME, verify_access_token
+from fastapi_app.services.user_service import USERS_FILE_PATH, find_device_by_id
+
 # Serve the frontend static files and allow CORS for external UI (optional)
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 app = FastAPI()
-
-# Include auth routes
-app.include_router(auth_router, tags=["Authentication"])
 
 # Process start time for uptime reporting
 START_TIME = time.time()
@@ -115,7 +116,52 @@ if frontend_dir.exists():
     app.mount("/static", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 
     @app.get("/", include_in_schema=False)
-    async def serve_index():
+    async def serve_index(request: StarletteRequest):
+        auth_token = None
+        auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
+        if auth_header:
+            scheme, _, token = auth_header.partition(" ")
+            if scheme.lower() == "bearer" and token:
+                auth_token = token.strip()
+
+        if not auth_token:
+            auth_token = request.cookies.get(JWT_COOKIE_NAME)
+
+        authenticated = False
+        if auth_token:
+            payload = verify_access_token(auth_token)
+            if payload:
+                device = find_device_by_id(payload.get("sub", ""))
+                authenticated = bool(device and device.get("status") == "active")
+
+        if not authenticated:
+            cookie_token = get_cookie_token(request)
+            if cookie_token and os.path.exists(USERS_FILE_PATH):
+                try:
+                    with open(USERS_FILE_PATH, "r", encoding="utf-8") as file:
+                        for line in file:
+                            parts = [p.strip() for p in line.split("|")]
+                            if len(parts) >= 2 and parts[1] == "active":
+                                if cookie_token == create_cookie_token(parts[0]):
+                                    authenticated = True
+                                    break
+                except Exception:
+                    authenticated = False
+
+        if not authenticated:
+            forbidden_path = frontend_dir / "forbidden.html"
+            if forbidden_path.exists():
+                return FileResponse(
+                    str(forbidden_path),
+                    media_type="text/html",
+                    headers={
+                        "Cache-Control": "no-cache, no-store, must-revalidate",
+                        "Pragma": "no-cache",
+                        "Expires": "0",
+                    },
+                )
+            return {"detail": "Access forbidden"}
+
         index_path = frontend_dir / "index.html"
         if index_path.exists():
             return FileResponse(

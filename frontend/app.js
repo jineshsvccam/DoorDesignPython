@@ -1,4 +1,190 @@
 // Extracted JS from index.html
+const AUTH_TOKEN_KEY = "door_jwt";
+
+function getStoredJwt() {
+  return localStorage.getItem(AUTH_TOKEN_KEY) || "";
+}
+
+function storeJwt(token) {
+  if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+}
+
+function clearJwt() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
+function redirectToForbiddenPage() {
+  window.location.replace("/static/forbidden.html");
+}
+
+function revealAppShell() {
+  document.body.classList.remove("auth-pending");
+}
+
+function getActivationTokenFromUrl() {
+  return new URLSearchParams(window.location.search).get("activation_token");
+}
+
+async function loadFingerprintVisitorId() {
+  if (!window.FingerprintJS) {
+    throw new Error("FingerprintJS failed to load");
+  }
+  const fp = await window.FingerprintJS.load();
+  const result = await fp.get();
+  return result.visitorId;
+}
+
+function getDeviceType() {
+  const ua = navigator.userAgent || "";
+  const isMobile =
+    /Mobi|Android|iPhone|iPad|iPod/i.test(ua) ||
+    (navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua));
+  return isMobile ? "mobile" : "desktop";
+}
+
+async function postAuthJson(url, payload) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    let message = "Authentication failed";
+    try {
+      const error = await response.json();
+      message = error.detail || message;
+    } catch (_) {}
+    throw new Error(message);
+  }
+  return response.json();
+}
+
+async function activateFromRegistrationToken(token) {
+  const visitorId = await loadFingerprintVisitorId();
+  const deviceLabel = [navigator.platform, navigator.userAgent.split(" ")[0]]
+    .filter(Boolean)
+    .join(" ");
+  const data = await postAuthJson("/auth/activate", {
+    token,
+    visitor_id: visitorId,
+    device_label: deviceLabel,
+    device_type: getDeviceType(),
+  });
+  if (data && data.token) {
+    storeJwt(data.token);
+    window.history.replaceState({}, document.title, "/");
+    return true;
+  }
+  return false;
+}
+
+async function recoverJwtFromFingerprint() {
+  const visitorId = await loadFingerprintVisitorId();
+  const data = await postAuthJson("/auth/recover", { visitor_id: visitorId });
+  if (data && data.token) {
+    storeJwt(data.token);
+    return true;
+  }
+  return false;
+}
+
+async function checkCurrentAuth() {
+  const headers = new Headers();
+  const token = getStoredJwt();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch("/check-auth", {
+    method: "GET",
+    headers,
+  });
+
+  if (!response.ok) {
+    return false;
+  }
+
+  try {
+    const data = await response.json();
+    return data && data.authenticated === true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function ensureAuthenticated() {
+  const activationToken = getActivationTokenFromUrl();
+  if (activationToken) {
+    const activated = await activateFromRegistrationToken(activationToken);
+    if (!activated) {
+      redirectToForbiddenPage();
+    }
+    return activated;
+  }
+
+  try {
+    if (await checkCurrentAuth()) {
+      revealAppShell();
+      return true;
+    }
+  } catch (_) {
+    // Fall through to fingerprint recovery.
+  }
+
+  try {
+    const recovered = await recoverJwtFromFingerprint();
+    if (!recovered) {
+      redirectToForbiddenPage();
+      return false;
+    }
+    revealAppShell();
+    return recovered;
+  } catch (_) {
+    redirectToForbiddenPage();
+    return false;
+  }
+}
+
+const authReadyPromise = ensureAuthenticated();
+
+authReadyPromise
+  .then((authenticated) => {
+    if (authenticated) {
+      revealAppShell();
+    }
+  })
+  .catch(() => {
+    redirectToForbiddenPage();
+  });
+
+async function authFetch(url, options = {}) {
+  await authReadyPromise;
+  const requestOptions = { ...options };
+  const headers = new Headers(requestOptions.headers || {});
+  const token = getStoredJwt();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  requestOptions.headers = headers;
+
+  let response = await fetch(url, requestOptions);
+  if (response.status === 401 && token) {
+    clearJwt();
+    try {
+      const recovered = await recoverJwtFromFingerprint();
+      if (recovered) {
+        headers.set("Authorization", `Bearer ${getStoredJwt()}`);
+        response = await fetch(url, requestOptions);
+      } else {
+        redirectToForbiddenPage();
+      }
+    } catch (_) {
+      redirectToForbiddenPage();
+    }
+  }
+  return response;
+}
+
 const toggleSwitch = document.getElementById("toggleSwitch");
 const toggleSlider = document.getElementById("toggleSlider");
 const toggleOptions = document.querySelectorAll(".toggle-option");
@@ -388,7 +574,7 @@ document.addEventListener("click", (e) => {
       try {
         const payload = buildRequestPayload();
 
-        const resp = await fetch("/generate-single-dxf/?output_format=pdf", {
+        const resp = await authFetch("/generate-single-dxf/?output_format=pdf", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -670,7 +856,7 @@ form.addEventListener("submit", async (e) => {
     try {
       const requestPayload = buildRequestPayload();
 
-      const response = await fetch("/generate-single-dxf/?output_format=dxf", {
+      const response = await authFetch("/generate-single-dxf/?output_format=dxf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestPayload),
@@ -719,7 +905,7 @@ form.addEventListener("submit", async (e) => {
     formData.append("pdf_required", "true");
 
     try {
-      const response = await fetch("/generate-dxf/", {
+      const response = await authFetch("/generate-dxf/", {
         method: "POST",
         body: formData,
       });
@@ -941,7 +1127,7 @@ if (previewBtn) {
     previewBox.textContent = "Loading...";
 
     try {
-      const resp = await fetch("/dxf/geometry", {
+      const resp = await authFetch("/dxf/geometry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

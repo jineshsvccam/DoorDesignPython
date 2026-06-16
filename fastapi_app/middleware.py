@@ -30,7 +30,7 @@ ALLOWED_NETWORKS = []
 # Authentication configuration
 REQUIRE_AUTH = os.environ.get("REQUIRE_AUTH", "false").lower() in ("true", "1", "yes")
 PUBLIC_PATHS = {
-    "/static", "/register", "/check-auth", 
+    "/", "/logs", "/static", "/favicon.ico", "/register", "/auth/activate", "/auth/recover", "/check-auth",
     "/health", "/healthz", "/docs", "/openapi.json", "/redoc"
 }
 
@@ -110,7 +110,7 @@ async def ip_whitelist_middleware(request: StarletteRequest, call_next):
 
 
 async def auth_middleware(request: StarletteRequest, call_next):
-    """Check authentication cookies when REQUIRE_AUTH=true, except for public paths."""
+    """Check JWT first, then legacy auth cookies when REQUIRE_AUTH=true."""
     if not REQUIRE_AUTH:
         return await call_next(request)
     
@@ -125,6 +125,30 @@ async def auth_middleware(request: StarletteRequest, call_next):
     if is_public:
         return await call_next(request)
     
+    # Verify JWT from Authorization header or navigation fallback cookie.
+    try:
+        from fastapi_app.services.jwt_service import verify_access_token, JWT_COOKIE_NAME
+        from fastapi_app.services.user_service import find_device_by_id
+
+        auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
+        jwt_token = None
+        if auth_header:
+            scheme, _, token = auth_header.partition(" ")
+            if scheme.lower() == "bearer" and token:
+                jwt_token = token.strip()
+        if not jwt_token:
+            jwt_token = request.cookies.get(JWT_COOKIE_NAME)
+
+        if jwt_token:
+            payload = verify_access_token(jwt_token)
+            if payload:
+                device = find_device_by_id(payload["sub"])
+                if device and device.get("status") == "active":
+                    request.scope["auth_device_id"] = payload["sub"]
+                    return await call_next(request)
+    except Exception as e:
+        logger.error(f"JWT auth middleware error: {e}")
+
     # Verify authentication cookie
     try:
         from fastapi_app.services.cookie_service import get_cookie_token, create_cookie_token
@@ -186,28 +210,46 @@ async def request_logging_middleware(request: StarletteRequest, call_next):
     else:
         client_ip = request.client.host if request.client else "unknown"
 
-    # Extract authenticated user from cookie
+    # Extract authenticated device/user from JWT or legacy cookie
     user_ident = "anonymous"
     try:
-        from fastapi_app.services.cookie_service import get_cookie_token, create_cookie_token
-        from fastapi_app.services.user_service import USERS_FILE_PATH
-        
-        cookie_token = get_cookie_token(request)
-        if cookie_token and os.path.exists(USERS_FILE_PATH):
-            with open(USERS_FILE_PATH, "r") as file:
-                for line in file:
-                    parts = [p.strip() for p in line.split("|")]
-                    if len(parts) >= 2:
-                        token = parts[0]
-                        status = parts[1]
-                        if status == "active":
-                            expected_hash = create_cookie_token(token)
-                            if cookie_token == expected_hash:
-                                # Use first 8 chars of token as user identifier
-                                user_ident = token[:8] if len(token) >= 8 else token
-                                break
+        from fastapi_app.services.jwt_service import verify_access_token, JWT_COOKIE_NAME
+        auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
+        jwt_token = None
+        if auth_header:
+            scheme, _, token = auth_header.partition(" ")
+            if scheme.lower() == "bearer" and token:
+                jwt_token = token.strip()
+        if not jwt_token:
+            jwt_token = request.cookies.get(JWT_COOKIE_NAME)
+        if jwt_token:
+            payload = verify_access_token(jwt_token)
+            if payload:
+                user_ident = str(payload.get("sub", "anonymous"))[:8]
     except Exception:
-        pass  # Fallback to "anonymous" on any error
+        pass
+
+    if user_ident == "anonymous":
+        try:
+            from fastapi_app.services.cookie_service import get_cookie_token, create_cookie_token
+            from fastapi_app.services.user_service import USERS_FILE_PATH
+            
+            cookie_token = get_cookie_token(request)
+            if cookie_token and os.path.exists(USERS_FILE_PATH):
+                with open(USERS_FILE_PATH, "r") as file:
+                    for line in file:
+                        parts = [p.strip() for p in line.split("|")]
+                        if len(parts) >= 2:
+                            token = parts[0]
+                            status = parts[1]
+                            if status == "active":
+                                expected_hash = create_cookie_token(token)
+                                if cookie_token == expected_hash:
+                                    # Use first 8 chars of token as user identifier
+                                    user_ident = token[:8] if len(token) >= 8 else token
+                                    break
+        except Exception:
+            pass  # Fallback to "anonymous" on any error
 
     # detect file upload by content-type
     content_type = request.headers.get("content-type", "")
